@@ -1,6 +1,7 @@
 # Importing required modules for GUI and image processing
 from tkinter import Tk, Frame, Button, Label, Entry, filedialog, messagebox, Scale, HORIZONTAL
-from tkinter import Canvas, PhotoImage, Toplevel
+from tkinter import Canvas, PhotoImage, Toplevel, Checkbutton, IntVar
+from matplotlib import pyplot as plt
 from PIL import Image, ImageTk, ImageOps
 import numpy as np
 import cv2
@@ -16,16 +17,18 @@ class BinarizedImage:
         self.grayscale_array = cv2.imread(self.img_path, cv2.IMREAD_GRAYSCALE)
         self.binary_array = self.grayscale_array >= int(threshold * 255)
         self.threshold = threshold
+        self.contours = []
 
     def update_mask(self, threshold, boundary=None):
         """Update the mask based on a threshold and an optional boundary."""
         self.threshold = threshold
         if boundary is not None:
             # Create a mask for the region inside the boundary
-            mask = np.zeros_like(self.grayscale_array, dtype=bool)
+            mask = np.zeros_like(self.grayscale_array, dtype=bool).astype(np.uint8)
             cv2.fillPoly(mask, [np.array(boundary)], True)
+            mask = mask.astype(bool)
             # Update the threshold only inside the boundary
-            self.binary_array[mask] = self.grayscale_array[mask] >= int(threshold * 255)
+            self.binary_array[mask] = self.grayscale_array[mask] >= int(threshold)
         else:
             # Update the threshold for the entire image
             self.binary_array = self.grayscale_array >= int(threshold * 255)
@@ -45,7 +48,7 @@ class BinarizedImage:
         # Sort the contours by area in descending order
         contours = sorted(contours, key=cv2.contourArea, reverse=True)
 
-        return contours
+        self.contours = contours
 
 
 # Define the GUI class
@@ -83,7 +86,7 @@ class ImageBinarizationApp:
 
         # Threshold
         self.threshold_scale = None
-        self.local_threshold = 0.35
+        self.local_threshold = 36
         # Member variable to store the points for local threshold or deletion
         self.points = []
 
@@ -118,11 +121,46 @@ class ImageBinarizationApp:
         self.current_image.update_mask(threshold_value / 255.0)
         self.update_canvas()
 
-    def draw_boundary(self, event):
-        # Append the point where the user clicked to the points list
-        self.points.append((event.x, event.y))
-        # Draw a circle to represent the point
+    def start_drawing(self, event):
+        # Get the width and height of the right canvas
+        canvas_width = self.right_canvas.winfo_width()
+        canvas_height = self.right_canvas.winfo_height()
+
+        # Check if the event happened within the canvas boundaries
+        if 0 <= event.x < canvas_width and 0 <= event.y < canvas_height:
+            # Clear previous points
+            self.points = []
+            # Start drawing
+            self.drawing = True
+            # Add the starting point
+            self.add_point(event)
+
+    def stop_drawing(self, event):
+        # Stop drawing
+        self.drawing = False
+        # Update the state of the Local Threshold slider
+        self.update_local_threshold_slider()
+
+    def add_point(self, event):
+        # Calculate the relative position of the mouse to the image
+        canvas_width = self.right_canvas.winfo_width()
+        canvas_height = self.right_canvas.winfo_height()
+        img_width, img_height = self.current_image.grayscale_array.shape[::-1]
+
+        # Scale the event coordinates to the image dimensions
+        x_scaled = int(event.x * img_width / canvas_width)
+        y_scaled = int(event.y * img_height / canvas_height)
+
+        # Add the scaled point to the points list
+        self.points.append((x_scaled, y_scaled))
+
+        # Visual feedback for the point
         self.right_canvas.create_oval(event.x - 2, event.y - 2, event.x + 2, event.y + 2, fill='red')
+
+    def draw_boundary(self, event):
+        # Continue adding points while drawing
+        if self.drawing:
+            self.add_point(event)
 
     def apply_local_threshold(self):
         # Check if there are enough points to define a boundary
@@ -214,23 +252,32 @@ class ImageBinarizationApp:
         self.right_canvas = Canvas(self.image_frame, width=250, height=250, bg='white')
         self.right_canvas.pack(side='right', fill='both', expand=True)
 
-        # Bind the mouse click event to the right canvas
-        self.right_canvas.bind("<Button-1>", self.draw_boundary)
+        # Initialize variables for drawing
+        self.drawing = False  # Track whether the mouse is currently being held down for drawing
+
+        # Bind the mouse click event to start drawing
+        self.right_canvas.bind("<ButtonPress-1>", self.start_drawing)
+        # Bind the mouse release event to stop drawing
+        self.right_canvas.bind("<ButtonRelease-1>", self.stop_drawing)
+        # Bind the mouse movement to draw continuously
+        self.right_canvas.bind("<B1-Motion>", self.draw_boundary)
 
         # Create and pack the threshold slider
         self.threshold_scale = Scale(self.binarize_window, from_=0, to_=255, orient=HORIZONTAL, command=self.update_threshold)
-        self.threshold_scale.set(int(self.local_threshold * 255))  # Set the default position of the slider
+        self.threshold_scale.set(int(self.local_threshold))  # Set the default position of the slider
         self.threshold_scale.pack(fill='x')
 
         # Add buttons for local thresholding, deleting regions, navigation, and saving
         button_frame = Frame(self.binarize_window)
         button_frame.pack(side='bottom', fill='x')
 
-        self.local_thresh_button = Button(button_frame, text="Local Threshold", command=self.apply_local_threshold)
-        self.local_thresh_button.pack(side='left')
+        # Modify button frame
+        modify_frame = Frame(self.binarize_window)
+        modify_frame.pack(side='right', fill='y')
 
-        self.delete_region_button = Button(button_frame, text="Delete Region", command=self.delete_region)
-        self.delete_region_button.pack(side='left')
+        # Modify button
+        self.modify_button = Button(modify_frame, text="Modify", command=self.open_modify_pane)
+        self.modify_button.pack()
 
         self.prev_button = Button(button_frame, text="<< Prev", command=lambda: self.navigate_images('prev'))
         self.prev_button.pack(side='left')
@@ -250,6 +297,44 @@ class ImageBinarizationApp:
         # This method is called when the binarize window is closed
         self.binarize_window.destroy()  # Destroy the binarize window
         self.master.deiconify()  # Show the main window again
+
+    def open_modify_pane(self):
+        # Create the modify pane as a Toplevel window
+        self.modify_pane = Toplevel(self.binarize_window)
+        self.modify_pane.title("Modifications")
+
+        # Local Threshold Slider
+        self.local_thresh_scale = Scale(self.modify_pane, from_=0, to_=255, orient=HORIZONTAL, label="Local Threshold")
+        self.local_thresh_scale.pack(fill='x')
+
+        # Blur Slider
+        self.blur_scale = Scale(self.modify_pane, from_=0, to_=10, orient=HORIZONTAL, label="Blur")
+        self.blur_scale.pack(fill='x')
+
+        # Boundary Checkbox
+        self.boundary_var = IntVar()
+        self.boundary_check = Checkbutton(self.modify_pane, text="Boundary", variable=self.boundary_var)
+        self.boundary_check.pack()
+
+        # Apply Button
+        self.apply_button = Button(self.modify_pane, text="Apply", command=self.apply_modifications)
+        self.apply_button.pack()
+
+        # Update the state of the Local Threshold slider based on the points
+        self.update_local_threshold_slider()
+
+    def update_local_threshold_slider(self):
+        if len(self.points) > 0:
+            self.local_thresh_scale.config(state="normal")
+        else:
+            self.local_thresh_scale.config(state="disabled")
+
+    def apply_modifications(self):
+        # Apply the local_threshold
+        if len(self.points) > 0:
+            self.local_threshold = self.local_thresh_scale.get()
+            self.apply_local_threshold()
+            self.update_canvas()
 
 
 # ... (rest of the code, including the main() function remains unchanged)
