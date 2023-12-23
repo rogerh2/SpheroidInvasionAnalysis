@@ -12,12 +12,15 @@ class BinarizedImage:
 
     def __init__(self, raw_image_path, save_path, threshold=36):
         self.img_path = raw_image_path
+        file_name = os.path.basename(raw_image_path)
+        self.img_name, self.img_ext = os.path.splitext(file_name)
         self.save_fldr_path = save_path
         # Load the raw image (assuming it's grayscale)
         self.grayscale_array = cv2.imread(self.img_path, cv2.IMREAD_GRAYSCALE)
         self.binary_array = self.grayscale_array >= int(threshold)
         self.threshold = threshold
         self.contours = []
+        self.last_guassian_kernel = None
 
     def update_mask(self, threshold, boundary=None):
         """Update the mask based on a threshold and an optional boundary."""
@@ -35,6 +38,9 @@ class BinarizedImage:
             self.binary_array = self.grayscale_array >= int(threshold)
 
     def auto_contour(self, guassian_kernel=None):
+        # Store the last used Gaussian kernel in a class attribute
+        self.last_guassian_kernel = guassian_kernel
+
         # If a Gaussian kernel is provided, apply Gaussian blur to the grayscale image.
         if guassian_kernel is not None:
             blurred_image = cv2.GaussianBlur(255 * self.binary_array.astype(np.uint8), guassian_kernel, 0)
@@ -50,6 +56,60 @@ class BinarizedImage:
         contours = sorted(contours, key=cv2.contourArea, reverse=True)
 
         self.contours = contours
+
+    def find_spheroid_centroid(self):
+        # Calculate the center of mass of the binarized image
+        M = cv2.moments(self.binary_array.astype(np.uint8))
+        if M["m00"] != 0:
+            cX = int(M["m10"] / M["m00"])
+            cY = int(M["m01"] / M["m00"])
+        else:
+            cX, cY = self.grayscale_array.shape[1] // 2, self.grayscale_array.shape[0] // 2
+
+        return cX, cY
+
+    def create_circular_mask(self):
+        cX, cY = self.find_spheroid_centroid()
+
+        # Calculate the largest radius possible before hitting the image edge
+        radius = min(cX, cY, self.grayscale_array.shape[1]-cX, self.grayscale_array.shape[0]-cY)
+
+        # Create a circular mask
+        Y, X = np.ogrid[:self.grayscale_array.shape[0], :self.grayscale_array.shape[1]]
+        dist_from_center = np.sqrt((X - cX)**2 + (Y-cY)**2)
+        mask = dist_from_center <= radius
+
+        # Apply the mask to the binary array
+        self.binary_array = np.logical_and(self.binary_array, mask)
+
+    def apply_contour_threshold(self):
+        """Apply a local threshold of 256 to all contours except the largest."""
+        if self.contours:
+            # Create a mask for all contours except the largest one
+            mask = np.zeros_like(self.grayscale_array, dtype=np.uint8)
+            for contour in self.contours[1:]:
+                cv2.fillPoly(mask, [contour], True)
+            # Apply the local threshold to the mask
+            self.binary_array[mask] = 256
+
+    def save_binarized_image(self):
+        if self.last_guassian_kernel is None:
+            k_size = 0
+        else:
+            k_size = self.last_guassian_kernel[0]
+
+        save_name = f'{self.img_name}_binarized_thresh-{self.threshold}_kernel-{k_size}'
+
+        # Save the binarized image with the circular mask
+        unmasked_image = Image.fromarray((self.binary_array * 255).astype(np.uint8))
+        unmasked_image.save(os.path.join(self.save_fldr_path
+                        , f'{save_name}_unmasked.{self.img_ext}'))
+
+        self.create_circular_mask()
+
+        # Save the binarized image without the circular mask
+        masked_image = Image.fromarray((self.binary_array * 255).astype(np.uint8))
+        masked_image.save(os.path.join(self.save_fldr_path, f'{save_name}_masked.{self.img_ext}'))
 
 
 # Define the GUI class
@@ -147,9 +207,7 @@ class ImageBinarizationApp:
         self.current_image = BinarizedImage(image_path, self.save_folder_path)
 
     def save_binarized_image(self):
-        # Save the binarized image with and without the mask
-        # ... (save image logic)
-        pass
+        self.current_image.save_binarized_image()
 
     def update_threshold(self, val):
         # Update the global threshold
@@ -434,13 +492,13 @@ class ImageBinarizationApp:
         self.local_thresh_scale.pack(fill='x')
 
         # Blur Slider
-        self.blur_scale = Scale(self.modify_pane, from_=0, to_=10, orient=HORIZONTAL, label="Blur")
+        self.blur_scale = Scale(self.modify_pane, from_=1, to_=11, resolution=2, orient=HORIZONTAL, label="Blur")
         self.blur_scale.pack(fill='x')
 
-        # Boundary Checkbox
+        # Change Boundary Checkbox to Button
         self.boundary_var = IntVar()
-        self.boundary_check = Checkbutton(self.modify_pane, text="Boundary", variable=self.boundary_var)
-        self.boundary_check.pack()
+        self.boundary_button = Button(self.modify_pane, text="Toggle Boundary", command=self.toggle_boundary)
+        self.boundary_button.pack()
 
         # Apply Button
         self.apply_button = Button(self.modify_pane, text="Apply", command=self.apply_modifications)
@@ -453,6 +511,11 @@ class ImageBinarizationApp:
 
         # Update the state of the Local Threshold slider based on the points
         self.update_local_threshold_slider()
+
+    def toggle_boundary(self):
+        self.boundary_var.set(not self.boundary_var.get())
+        # Update the canvas with potential modifications
+        self.update_canvas()
 
     def on_close_modify_pane(self):
         """Close the modify pane and reset related variables to their default values."""
@@ -479,6 +542,13 @@ class ImageBinarizationApp:
         if len(self.points) > 0:
             self.local_threshold = self.local_thresh_scale.get()
             self.apply_local_threshold()
+
+        # Apply a local threshold of 256 to all contours except the largest
+        if self.current_image.contours and self.boundary_var.get():
+            mask = np.zeros_like(self.current_image.grayscale_array, dtype=np.uint8)
+            for contour in self.current_image.contours[1:]:
+                cv2.fillPoly(mask, [contour], 1)
+            self.current_image.binary_array[mask.astype(bool)] = 0
 
         # Update the canvas with potential modifications
         self.update_canvas()
@@ -552,8 +622,6 @@ class ImageBinarizationApp:
         else:
             self.stop_panning(event)
 
-
-# ... (rest of the code, including the main() function remains unchanged)
 
 def main():
     # Create the main window (root of the Tk interface)
