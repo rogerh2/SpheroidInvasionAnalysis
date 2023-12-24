@@ -6,15 +6,22 @@ from PIL import Image, ImageTk, ImageOps
 import numpy as np
 import cv2
 import os
+from constants import *
 
 # Define the BinarizedImage class with required functionalities
 class BinarizedImage:
 
-    def __init__(self, raw_image_path, save_path, threshold=36):
+    def __init__(self, raw_image_path, save_path=None, threshold=36):
         self.img_path = raw_image_path
         file_name = os.path.basename(raw_image_path)
         self.img_name, self.img_ext = os.path.splitext(file_name)
-        self.save_fldr_path = save_path
+
+        # If no explicit save path save in the same directory as the images
+        if save_path is None:
+            self.save_fldr_path = os.path.dirname(raw_image_path)
+        else:
+            self.save_fldr_path = save_path
+
         # Load the raw image (assuming it's grayscale)
         self.grayscale_array = cv2.imread(self.img_path, cv2.IMREAD_GRAYSCALE)
         self.binary_array = self.grayscale_array >= int(threshold)
@@ -103,13 +110,13 @@ class BinarizedImage:
         # Save the binarized image with the circular mask
         unmasked_image = Image.fromarray((self.binary_array * 255).astype(np.uint8))
         unmasked_image.save(os.path.join(self.save_fldr_path
-                        , f'{save_name}_unmasked.{self.img_ext}'))
+                        , f'{save_name}_{UNMASKED}{self.img_ext}'))
 
         self.create_circular_mask()
 
         # Save the binarized image without the circular mask
         masked_image = Image.fromarray((self.binary_array * 255).astype(np.uint8))
-        masked_image.save(os.path.join(self.save_fldr_path, f'{save_name}_masked.{self.img_ext}'))
+        masked_image.save(os.path.join(self.save_fldr_path, f'{save_name}_{MASKED}{self.img_ext}'))
 
 
 # Define the GUI class
@@ -288,6 +295,7 @@ class ImageBinarizationApp:
     def navigate_images(self, direction):
         # Navigate to the next or previous image based on the direction
         if direction == 'next' and self.image_index < len(self.image_list) - 1:
+            self.save_binarized_image()
             self.image_index += 1
         elif direction == 'prev' and self.image_index > 0:
             self.image_index -= 1
