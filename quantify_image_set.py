@@ -138,7 +138,7 @@ class SpheroidImage:
 
         return distance_magnitude, close_inds, outer_pixels_full - self.centroid, boundary_pixels_full
 
-    def pca(self, save_fldr_path, angles, speeds):
+    def pca(self, save_fldr_path, angles, speeds, t):
 
         velocities = speeds[::, np.newaxis] * np.stack((np.cos(angles), np.sin(angles)), axis=1)
 
@@ -193,7 +193,7 @@ class SpheroidImage:
         ax.plot(a3, s3, "k")
         ax.plot(a4, s4, "k")
         ax.set_rlim(rmin=0)
-        plt.savefig(os.path.join(save_fldr_path, 'speed_vs_angle_with_principle_components.png'))
+        plt.savefig(os.path.join(save_fldr_path, f't{t}_speed_vs_angle_with_principle_components.png'))
         plt.close()
 
         # Plot transformed data
@@ -214,8 +214,24 @@ class SpheroidImage:
         ax.plot(a4, s4, "b")
         ax.plot(a5, s5, "k")
         ax.plot(a6, s6, "k")
-        plt.savefig(os.path.join(save_fldr_path, 'principle_coordinates_speed_vs_angle.png'))
+        plt.savefig(os.path.join(save_fldr_path, f't{t}_principle_coordinates_speed_vs_angle.png'))
         plt.close()
+
+        prin_speed_difference = principle_speeds[0] - principle_speeds[1]
+
+        # Calculate distances from boundary in pixels
+        transformed_outerdistance_lengths = (transformed_speeds * (t * 24 * 60))# / pixel_size
+        transformed_outerdistances_xy = (score * (t * 24 * 60))# / pixel_size
+
+        # Calculate moments of inertia from boundary
+        a = 1  # area for calculation - in this case = 1 bc pixels
+        principle_Irb = np.sum(transformed_outerdistance_lengths ** 2 * a)
+        principle_Ixb = np.sum(transformed_outerdistances_xy[:, 1] ** 2 * a)
+        principle_Iyb = np.sum(transformed_outerdistances_xy[:, 0] ** 2 * a)
+
+
+
+        return principle_angles[0], principle_angles[1], principle_speeds[0], principle_speeds[1], prin_speed_difference, principle_Irb, principle_Ixb, principle_Iyb, transformed_angles, transformed_speeds
 
 
 
@@ -228,7 +244,7 @@ class SpheroidImage:
         return np.arctan2(centered_y_coor, centered_x_coor)
 
 
-class QuantImageSet:
+class QuantSpheroidSet:
 
     def __init__(self, image_fpaths, save_path=None):
         sample_times = np.array([int(re.search(PATTERN, os.path.basename(filename)).group(1))
@@ -368,7 +384,7 @@ class QuantImageSet:
         return distances, indices, coordinates, angles_ls, outer_coordinates
 
 
-def PlotPixelDistancesandAngles(save_fldr_path, outerdistance_lengths, angles_array, outer_distances_xy, centerdistance_lengths,
+def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles_array, outer_distances_xy, centerdistance_lengths,
                                     full_distances_xy, num_days, pixel_size):
 
     plt.figure()
@@ -390,7 +406,7 @@ def PlotPixelDistancesandAngles(save_fldr_path, outerdistance_lengths, angles_ar
     plt.ylabel('frequency', **ARIAL)
 
     plt.tight_layout()  # Adjust subplots to fit into figure area.
-    plt.savefig(os.path.join(save_fldr_path, 'distances_histogram.png'))  # Save the figure
+    plt.savefig(os.path.join(save_fldr_path, f't{t}_distances_histogram.png'))  # Save the figure
     plt.close()
 
     # Assuming 'angles' is a list of numpy arrays or lists
@@ -401,7 +417,7 @@ def PlotPixelDistancesandAngles(save_fldr_path, outerdistance_lengths, angles_ar
     ax = plt.subplot(111, polar=True)  # Create a polar subplot
     ax.hist(angles_array, bins=20)  # Polar histogram with 20 bins
     plt.title('Angles histogram', **ARIAL)
-    plt.savefig(os.path.join(save_fldr_path, 'angles_histogram.png'))
+    plt.savefig(os.path.join(save_fldr_path, f't{t}_angles_histogram.png'))
     plt.close()
 
     max_dist = np.max(outerdistance_lengths)
@@ -423,14 +439,14 @@ def PlotPixelDistancesandAngles(save_fldr_path, outerdistance_lengths, angles_ar
         plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{int(np.ceil(value))}',
                  ha='center', va='bottom')
 
-    plt.savefig(os.path.join(save_fldr_path, 'representative_distances.png'))
+    plt.savefig(os.path.join(save_fldr_path, f't{t}_representative_distances.png'))
     plt.close()
 
     plt.figure()
     ax1 = plt.subplot(111, polar=True)
     ax1.plot(angles_array, centerdistance_lengths, '.')
     plt.title("Distances from center (pixels) vs angle")
-    plt.savefig(os.path.join(save_fldr_path, 'distances_vs_angle_center.png'))
+    plt.savefig(os.path.join(save_fldr_path, f't{t}_distances_vs_angle_center.png'))
     plt.close()
 
     # Plot the boundary distance vs angle values in a polar plot
@@ -438,7 +454,7 @@ def PlotPixelDistancesandAngles(save_fldr_path, outerdistance_lengths, angles_ar
     ax2 = plt.subplot(111, polar=True)
     ax2.plot(angles_array, outerdistance_lengths, '.')
     plt.title("Distances from boundary (pixels) vs angle")
-    plt.savefig(os.path.join(save_fldr_path, 'distances_vs_angle_boundary.png'))
+    plt.savefig(os.path.join(save_fldr_path, f't{t}_distances_vs_angle_boundary.png'))
     plt.close()
 
     # Convert distances to meters and calculate speed
@@ -451,7 +467,7 @@ def PlotPixelDistancesandAngles(save_fldr_path, outerdistance_lengths, angles_ar
     ax = plt.subplot(111, polar=True)
     ax.plot(angles_array, speed_array, '.')
     plt.title('Speed vs angle')
-    plt.savefig(os.path.join(save_fldr_path, 'speed_vs_angle.png'))
+    plt.savefig(os.path.join(save_fldr_path, f't{t}_speed_vs_angle.png'))
     plt.close()
 
     a = 1  # area for calculation - in this case = 1 bc pixels
@@ -479,7 +495,7 @@ def PlotPixelDistancesandAngles(save_fldr_path, outerdistance_lengths, angles_ar
             plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{value:.2e}',
                      ha='center', va='bottom')
 
-        plt.savefig(os.path.join(save_fldr_path, title.replace(' ', '_').lower() + '.png'))
+        plt.savefig(os.path.join(save_fldr_path, f't{t}_' + title.replace(' ', '_').lower() + '.png'))
         plt.close()
 
     # Plot the moment of inertia from center
@@ -493,10 +509,22 @@ def PlotPixelDistancesandAngles(save_fldr_path, outerdistance_lengths, angles_ar
 
 if __name__ == "__main__":
     data_fldr = r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt18 images to quantify\test'
-    image_fpaths = os.listdir(data_fldr)
-    process_masked = True
 
+    id_dict = {'experiment': 18, 'condition': 'static'}
+    # Filtering out directories from image_fpaths
+    image_fpaths = []
+
+    for f in os.listdir(data_fldr):
+        _, img_ext = os.path.splitext(f)
+
+        if img_ext in ['.tif', '.png', '.jpg']:
+            image_fpaths.append(f)
+
+
+    process_masked = True
     processed_experiments = []
+
+    overall_summary_dataframe = pd.DataFrame()
 
     for i, fname in enumerate(image_fpaths):
 
@@ -508,26 +536,32 @@ if __name__ == "__main__":
             continue
 
         _, ext = os.path.splitext(fname)
-        exp_num = int(fname.split('_')[0])
+        spheroid_num = int(fname.split('_')[0])
         day = int(re.search(PATTERN, fname).group(1))
         is_masked = fname.split('_')[-1][:-len(ext)] == MASKED
 
         # Check if this experiment was already processed or has the propper masking
-        if (exp_num in processed_experiments) or (process_masked != is_masked):
+        if (spheroid_num in processed_experiments) or (process_masked != is_masked):
             continue
 
         fpaths_for_this_experiment = []
 
         for filename in image_fpaths:
-            if (int(filename.split('_')[0]) == exp_num) and (filename.split('_')[-1][:-len(ext)] == MASKED):
+            if (int(filename.split('_')[0]) == spheroid_num) and (filename.split('_')[-1][:-len(ext)] == MASKED):
                 fpaths_for_this_experiment.append(os.path.join(data_fldr, filename))
 
         # Make a folder to store the data from this experiment
-        save_fldr_path = os.path.join(data_fldr, f'{exp_num}_data')
+        save_prefix = f'spheroid-{spheroid_num}'
+
+        for id_name, id_value in id_dict.items():
+            save_prefix = f'{id_name}-{id_value}_' + save_prefix
+
+        save_fldr_path = os.path.join(data_fldr, save_prefix + '_data')
+
         if not os.path.isdir(save_fldr_path):
             os.makedirs(save_fldr_path)
 
-        image_set_for_this_experiment = QuantImageSet(fpaths_for_this_experiment)
+        image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment)
         distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary()
 
         A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
@@ -538,12 +572,31 @@ if __name__ == "__main__":
         Iyb_values = []
         Irc_values = []
         Ixc_values = []
+        max_speeds = []
+        mean_speeds = []
+        median_speeds = []
+        max_angles = []
+        mean_angles = []
+        median_angles = []
+        pa0_values = []
+        pa1_values = []
+        ps0_values = []
+        ps1_values = []
+        prin_speed_diff_values = []
+        principle_Irb_values = []
+        principle_Ixb_values = []
+        principle_Iyb_values = []
+
         speed_values = np.zeros(angles.shape)
+        speed_angle_columns_data = []
 
 
-        for j, img in enumerate(image_set_for_this_experiment.images[1:]):
+        for j in range(0, len(image_set_for_this_experiment.images) - 1):
+
+            img, t = image_set_for_this_experiment.images[j + 1], image_set_for_this_experiment.times[j + 1]
+
             distances = distances[0]
-            metrics = PlotPixelDistancesandAngles(save_fldr_path, distances, angles[j], outer_coordinates[0]
+            metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances, angles[j], outer_coordinates[0]
                                                   , np.sqrt(pixles[0,::,0] ** 2 + pixles[0,::,1] ** 2), pixles[j], 2, 1)
             Irb, Ixb, Iyb, Irc, Ixc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths\
                 , full_distances_xy, speed_array, speed_dimensionalized = metrics
@@ -554,39 +607,70 @@ if __name__ == "__main__":
             Iyb_values.append(Iyb)
             Irc_values.append(Irc)
             Ixc_values.append(Ixc)
-            speed_values[j] = speed_dimensionalized
+            max_speeds.append(np.max(speed_dimensionalized))
+            mean_speeds.append(np.mean(speed_dimensionalized))
+            median_speeds.append(np.median(speed_dimensionalized))
+            max_angles.append(np.max(angles[j, :]))
+            mean_angles.append(np.mean(angles[j, :]))
+            median_angles.append(np.median(angles[j, :]))
 
-            img.pca(save_fldr_path, angles[j], speed_dimensionalized)
+            pca_metrics = img.pca(save_fldr_path, angles[j], speed_dimensionalized, t)
+            pa0, pa1, ps0, ps1, prin_speed_difference, principle_Irb, principle_Ixb\
+                , principle_Iyb, transformed_angles, transformed_speeds = pca_metrics
+
+            # Append to the columns list with appropriate names
+            speed_angle_columns_data.append(('Speeds at time {}'.format(t), speed_dimensionalized))
+            speed_angle_columns_data.append(('Angles at time {}'.format(t), angles[j, :]))
+            speed_angle_columns_data.append(('PCA transformed Speeds at time {}'.format(t), transformed_speeds))
+            speed_angle_columns_data.append(('PCA transformed Angles at time {}'.format(t), transformed_angles))
+
+            pa0_values.append(pa0)
+            pa1_values.append(pa1)
+            ps0_values.append(ps0)
+            ps1_values.append(ps1)
+            prin_speed_diff_values.append(prin_speed_difference)
+            principle_Irb_values.append(principle_Irb)
+            principle_Ixb_values.append(principle_Ixb)
+            principle_Iyb_values.append(principle_Iyb)
 
         # Create a dictionary of the summary values
+        summary_dict = {id_name: [id_value] * (len(image_set_for_this_experiment.images) - 1) for id_name, id_value in id_dict.items()}
+
         summary_dict = {'t0 areas': A0 * np.ones(len(areas)),
                         'areas': areas,
                         'Irb': Irb_values,
                         'Ixb': Ixb_values,
                         'Iyb': Iyb_values,
                         'Irc': Irc_values,
-                        'Ixc': Ixc_values}
-        summary_dataframe = pd.DataFrame(summary_dict, index=image_set_for_this_experiment.times)
+                        'Ixc': Ixc_values,
+                        'max_speed': max_speeds,
+                        'mean_speed': mean_speeds,
+                        'median_speed': median_speeds,
+                        'max_angle': max_angles,
+                        'mean_angle': mean_angles,
+                        'median_angle': median_angles,
+                        'principle0_angles': pa0_values,
+                        'principle1_angles': pa1_values,
+                        'principle0_speeds': ps0_values,
+                        'principle1_speeds': ps1_values,
+                        'prin_speed_difference': prin_speed_diff_values,
+                        'principle_Irb': principle_Irb_values,
+                        'principle_Ixb': principle_Ixb_values,
+                        'principle_Iyb': principle_Iyb_values
+                        }
+
+        summary_dataframe = pd.DataFrame(summary_dict, index=image_set_for_this_experiment.times[1:])
         summary_dataframe.to_csv(os.path.join(save_fldr_path, 'summary.csv'))
+        # Concatenate current summary dataframe to overall summary dataframe
+        overall_summary_dataframe = pd.concat([overall_summary_dataframe, summary_dataframe])
 
-        # Create a dictionary of the full speeds and angles
-        # Initialize an empty list to hold the DataFrame's column data
-        columns_data = []
-
-        # Loop through each time step
-        for j, t in enumerate(image_set_for_this_experiment.times[1:]):
-            # Extract the speed and angle values for this time step
-            speed_col = speed_values[j, :]
-            angle_col = angles[j, :]
-
-            # Append to the columns list with appropriate names
-            columns_data.append(('Speeds at time {}'.format(t), speed_col))
-            columns_data.append(('Angles at time {}'.format(t), angle_col))
-
-        # Create a dictionary from the columns data
-        data_dict = dict(columns_data)
+        # Create a dictionary from the speed and angles column data
+        data_dict = dict(speed_angle_columns_data)
 
         # Create the DataFrame from the dictionary
         speed_angle_dataframe = pd.DataFrame(data_dict)
-        speed_angle_dataframe.to_csv(os.path.join(save_fldr_path, 'speeds_and_angles.csv'))
+        speed_angle_dataframe.to_csv(os.path.join(data_fldr, save_prefix + '_speeds_and_angles.csv'))
+
+    # Save the overall summary dataframe to CSV at the end of the outermost loop
+    overall_summary_dataframe.to_csv(os.path.join(data_fldr, 'overall_summary.csv'))
 
