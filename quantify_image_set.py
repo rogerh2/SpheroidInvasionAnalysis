@@ -2,10 +2,15 @@ import os
 import re
 import cv2
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider
-from scipy.spatial import cKDTree
 from constants import *
+
+
+ARIAL = {'fontname': 'Arial',
+         'size'    : 22}
+
 
 
 class SpheroidImage:
@@ -68,6 +73,7 @@ class SpheroidImage:
         num_batches = num_pix // batch_size + (num_pix % batch_size != 0)
         distance_magnitude = np.zeros(num_pix)
         close_inds = np.zeros(num_pix)
+        boundary_pixels_full = np.zeros(outer_pixels_full.shape)
 
         for i in range(num_batches):
             outer_pixels = outer_pixels_full[i * batch_size : min((i + 1) * batch_size, num_pix)]
@@ -124,11 +130,12 @@ class SpheroidImage:
             close_inds[i * batch_size: min((i + 1) * batch_size, num_pix)] = current_close_inds
 
             # calculate the distance magnitude
-            xb_close = xb[current_close_inds]  # N
-            yb_close = yb[current_close_inds]  # N
+            xb_close = xb[current_close_inds] # N
+            yb_close = yb[current_close_inds] # N
             distance_magnitude[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.sqrt((x1 - xb_close) ** 2 + (y1 - yb_close) ** 2)  # shape N
+            boundary_pixels_full[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.stack((xb_close - x0, yb_close - y0), axis=1)
 
-        return distance_magnitude, close_inds, outer_pixels_full
+        return distance_magnitude, close_inds, outer_pixels_full - self.centroid, boundary_pixels_full
 
     def get_angles_outside_boundary(self, boundary):
         outer_pixels = self.get_pixle_coor_outside_boundary(boundary)
@@ -136,10 +143,7 @@ class SpheroidImage:
         centered_x_coor = outer_pixels[:, 0] - self.centroid[0]
         centered_x_coor = np.sign(centered_x_coor) * np.clip(np.abs(centered_x_coor), 1e-8, np.inf)
         centered_y_coor = outer_pixels[:, 1] - self.centroid[1]
-        return np.arctan(centered_y_coor / centered_x_coor)
-
-
-
+        return np.arctan2(centered_y_coor, centered_x_coor)
 
 
 class QuantImageSet:
@@ -165,10 +169,12 @@ class QuantImageSet:
         angles_ls = []
         indices = []
         coordinates = []
+        outer_coordinates = []
+        times = []
 
         for img in self.images[1:]:
             centered_boundary = img.center_boundary(init_bound)
-            dist, inds, coor = img.intersection_distance(centered_boundary)
+            dist, inds, coor, outer_coor = img.intersection_distance(centered_boundary)
             angles = img.get_angles_outside_boundary(centered_boundary)
 
             # Uncomment to test find distance to boundary
@@ -182,7 +188,7 @@ class QuantImageSet:
             # y_coords = centered_boundary[:, 1]
             # line, = ax.plot(x_coords, y_coords, 'r-', linewidth=2)  # Initial boundary line
             # point_bx, = ax.plot(x_coords[0], y_coords[0], 'bx')  # Initial blue x
-            # point_rx, = ax.plot(coor[0, 0], coor[0, 1], 'r.')  # Initial red x
+            # point_rx, = ax.plot(coor[0, 0] + img.centroid[0], coor[0, 1] + img.centroid[1], 'r.')  # Initial red x
             #
             # # Slider setup
             # ax_slider = plt.axes([0.25, 0.1, 0.65, 0.03])  # Slider position and size
@@ -195,7 +201,7 @@ class QuantImageSet:
             #     current_pixles = coor[inds == ind]
             #
             #     point_bx.set_data(x_coords[ind], y_coords[ind])
-            #     point_rx.set_data(current_pixles[::, 0], current_pixles[::, 1])
+            #     point_rx.set_data(current_pixles[::, 0] + img.centroid[0], current_pixles[::, 1] + img.centroid[1])
             #     fig.canvas.draw_idle()
             #
             # # Call update function when slider value is changed
@@ -218,13 +224,13 @@ class QuantImageSet:
             #     end_y = center[1] + length * np.sin(angle_rad)
             #
             #     # Calculate the new end point of the line
-            #     start_x = center[0] - length * np.cos(angle_rad)
-            #     start_y = center[1] - length * np.sin(angle_rad)
+            #     start_x = center[0]# - length * np.cos(angle_rad)
+            #     start_y = center[1]# - length * np.sin(angle_rad)
             #
             #     # Update the line and point on the plot
             #     line.set_xdata([start_x, end_x])
             #     line.set_ydata([start_y, end_y])
-            #     point_rx.set_data(pix_pt[0], pix_pt[1])
+            #     point_rx.set_data(pix_pt[0] + center[0], pix_pt[1] + center[1])
             #
             #     # Redraw the figure
             #     fig.canvas.draw_idle()
@@ -266,14 +272,141 @@ class QuantImageSet:
             distances.append(dist)
             indices.append(inds)
             coordinates.append(coor)
+            outer_coordinates.append(outer_coor)
             angles_ls.append(angles)
+            times.append(img)
 
-        return distances, indices, coordinates
+        # Convert lists to numpy arrays
+        distances = np.asarray(distances)
+        indices = np.asarray(indices)
+        coordinates = np.asarray(coordinates)
+        angles_ls = np.asarray(angles_ls)
+        outer_coordinates = np.asarray(outer_coordinates)
+
+        return distances, indices, coordinates, angles_ls, outer_coordinates
 
 
+def PlotPixelDistancesandAngles(save_fldr_path, outerdistance_lengths, angles_array, outer_distances_xy, centerdistance_lengths,
+                                    full_distances_xy, num_days, pixel_size):
 
+    plt.figure()
 
+    # Plot distances in a histogram
+    plt.subplot(2, 1, 1)  # 2 rows, 1 column, 1st subplot
+    h1, _, _ = plt.hist(outerdistance_lengths, bins=20)  # Histogram with 20 bins
+    plt.title('Distances from boundary histogram', **ARIAL)
+    plt.xlabel('distance (pixels)', **ARIAL)
+    plt.ylabel('frequency', **ARIAL)
 
+    # Plot the cumulative values in a histogram
+    plt.subplot(2, 1, 2)  # 2 rows, 1 column, 2nd subplot
+    x = np.arange(50, 1001, 50)  # Values from 50 to 1000 with a step of 50
+    cumDistValues = np.cumsum(h1)  # Cumulative sum of the histogram values
+    plt.bar(x[:len(cumDistValues)], cumDistValues, width=45)  # Bar plot
+    plt.title('Cumulative distances from boundary histogram')
+    plt.xlabel('distance (pixels)', **ARIAL)
+    plt.ylabel('frequency', **ARIAL)
+
+    plt.tight_layout()  # Adjust subplots to fit into figure area.
+    plt.savefig(os.path.join(save_fldr_path, 'distances_histogram.png'))  # Save the figure
+    plt.close()
+
+    # Assuming 'angles' is a list of numpy arrays or lists
+    #angles_array = np.concatenate(angles)  # Concatenate all angle arrays
+
+    # Create a polar histogram
+    plt.figure()
+    ax = plt.subplot(111, polar=True)  # Create a polar subplot
+    ax.hist(angles_array, bins=20)  # Polar histogram with 20 bins
+    plt.title('Angles histogram', **ARIAL)
+    plt.savefig(os.path.join(save_fldr_path, 'angles_histogram.png'))
+    plt.close()
+
+    max_dist = np.max(outerdistance_lengths)
+    median_dist = np.median(outerdistance_lengths)
+    mean_dist = np.mean(outerdistance_lengths)
+
+    # Plotting the bar graph
+    categories = ['max', 'median', 'mean']
+    values = [max_dist, median_dist, mean_dist]
+
+    plt.figure()
+    bars = plt.bar(categories, values)
+
+    plt.title('Representative distance values from the boundary')
+    plt.ylabel('distance (pixels)')
+
+    # Adding values on top of the bars
+    for bar, value in zip(bars, values):
+        plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{int(np.ceil(value))}',
+                 ha='center', va='bottom')
+
+    plt.savefig(os.path.join(save_fldr_path, 'representative_distances.png'))
+    plt.close()
+
+    plt.figure()
+    ax1 = plt.subplot(111, polar=True)
+    ax1.plot(angles_array, centerdistance_lengths, '.')
+    plt.title("Distances from center (pixels) vs angle")
+    plt.savefig(os.path.join(save_fldr_path, 'distances_vs_angle_center.png'))
+    plt.close()
+
+    # Plot the boundary distance vs angle values in a polar plot
+    plt.figure()
+    ax2 = plt.subplot(111, polar=True)
+    ax2.plot(angles_array, outerdistance_lengths, '.')
+    plt.title("Distances from boundary (pixels) vs angle")
+    plt.savefig(os.path.join(save_fldr_path, 'distances_vs_angle_boundary.png'))
+    plt.close()
+
+    # Convert distances to meters and calculate speed
+    outerdistance_lengths_m = outerdistance_lengths * pixel_size
+    centerdistance_lengths_m = centerdistance_lengths * pixel_size
+    speed_array = outerdistance_lengths_m / (num_days * 24 * 60)  # m/min
+
+    # Plotting the speed vs angle
+    plt.figure()
+    ax = plt.subplot(111, polar=True)
+    ax.plot(angles_array, speed_array, '.')
+    plt.title('Speed vs angle')
+    plt.savefig(os.path.join(save_fldr_path, 'speed_vs_angle.png'))
+    plt.close()
+
+    a = 1  # area for calculation - in this case = 1 bc pixels
+
+    # Calculate the area moment of inertia from the boundary
+    Irb = np.sum(outerdistance_lengths.astype(np.float64) ** 2 * a)
+    Ixb = np.sum(outer_distances_xy[:, 1].astype(np.float64) ** 2 * a)
+    Iyb = np.sum(outer_distances_xy[:, 0].astype(np.float64) ** 2 * a)
+
+    # Calculate the area moment of inertia from the spheroid center
+    Irc = np.sum(centerdistance_lengths.astype(np.float64) ** 2 * a)
+    Ixc = np.sum(full_distances_xy[:, 1].astype(np.float64) ** 2 * a)
+    Iyc = np.sum(full_distances_xy[:, 0].astype(np.float64) ** 2 * a)
+
+    def plot_moment_of_inertia(title, moments):
+        categories = ['Ir', 'Ix', 'Iy']
+        plt.figure()
+        bars = plt.bar(categories, moments)
+        plt.title(title)
+        plt.ylabel('Moment (pixels^4)')
+        plt.gca().tick_params(labelsize=14)
+
+        # Adding values on top of the bars
+        for bar, value in zip(bars, moments):
+            plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{value:.2e}',
+                     ha='center', va='bottom')
+
+        plt.savefig(os.path.join(save_fldr_path, title.replace(' ', '_').lower() + '.png'))
+        plt.close()
+
+    # Plot the moment of inertia from center
+    plot_moment_of_inertia('Moment of inertia from center', [Irc, Ixc, Iyc])
+
+    # Plot the moment of inertia from boundary
+    plot_moment_of_inertia('Moment of inertia from boundary', [Irb, Ixb, Iyb])
+
+    return Irb, Ixb, Iyb, Irc, Ixc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths, full_distances_xy, speed_array, pixel_size * speed_array
 
 
 if __name__ == "__main__":
@@ -283,7 +416,10 @@ if __name__ == "__main__":
 
     processed_experiments = []
 
-    for fname in image_fpaths:
+    for i, fname in enumerate(image_fpaths):
+
+        print(f'Quantifying data {100 * i / len(image_fpaths):.1f}% complete')
+
         _, ext = os.path.splitext(fname)
         exp_num = int(fname.split('_')[0])
         day = int(re.search(PATTERN, fname).group(1))
@@ -299,7 +435,69 @@ if __name__ == "__main__":
             if (int(filename.split('_')[0]) == exp_num) and (filename.split('_')[-1][:-len(ext)] == MASKED):
                 fpaths_for_this_experiment.append(os.path.join(data_fldr, filename))
 
-        image_set_for_this_experiment = QuantImageSet(fpaths_for_this_experiment)
-        distances, indices, outer_pixles = image_set_for_this_experiment.distances_outside_initial_boundary()
+        # Make a folder to store the data from this experiment
+        save_fldr_path = os.path.join(data_fldr, f'{exp_num}_data')
+        if not os.path.isdir(save_fldr_path):
+            os.makedirs(save_fldr_path)
 
-    # TODO create plots
+        image_set_for_this_experiment = QuantImageSet(fpaths_for_this_experiment)
+        distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary()
+
+        A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
+
+        areas = [A0,]
+        Irb_values = [None,]
+        Ixb_values = [None,]
+        Iyb_values = [None,]
+        Irc_values = [None,]
+        Ixc_values = [None,]
+        speed_values = np.zeros((len(image_set_for_this_experiment.images), outer_coordinates.shape[1]))
+        angles = np.concatenate((np.zeros((1, outer_coordinates.shape[1])), angles), axis=0)
+
+
+        for j, img in enumerate(image_set_for_this_experiment.images[1:]):
+            distances = distances[0]
+            metrics = PlotPixelDistancesandAngles(save_fldr_path, distances, angles[j + 1], outer_coordinates[0]
+                                                  , np.sqrt(pixles[0,::,0] ** 2 + pixles[0,::,1] ** 2), pixles[j], 2, 1)
+            Irb, Ixb, Iyb, Irc, Ixc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths\
+                , full_distances_xy, speed_array, speed_dimensionalized = metrics
+
+            areas.append(np.sum(img.img_array))
+            Irb_values.append(Irb)
+            Ixb_values.append(Ixb)
+            Iyb_values.append(Iyb)
+            Irc_values.append(Irc)
+            Ixc_values.append(Ixc)
+            speed_values[j + 1] = speed_dimensionalized
+
+        # Create a dictionary of the summary values
+        summary_dict = {'areas': areas,
+                        'Irb': Irb_values,
+                        'Ixb': Ixb_values,
+                        'Iyb': Iyb_values,
+                        'Irc': Irc_values,
+                        'Ixc': Ixc_values}
+        summary_dataframe = pd.DataFrame(summary_dict, index=image_set_for_this_experiment.times)
+        summary_dataframe.to_csv(os.path.join(save_fldr_path, 'summary.csv'))
+
+        # Create a dictionary of the full speeds and angles
+        # Initialize an empty list to hold the DataFrame's column data
+        columns_data = []
+
+        # Loop through each time step
+        for j, t in enumerate(image_set_for_this_experiment.times):
+            # Extract the speed and angle values for this time step
+            speed_col = speed_values[j, :]
+            angle_col = angles[j, :]
+
+            # Append to the columns list with appropriate names
+            columns_data.append(('Speeds at time {}'.format(t), speed_col))
+            columns_data.append(('Angles at time {}'.format(t), angle_col))
+
+        # Create a dictionary from the columns data
+        data_dict = dict(columns_data)
+
+        # Create the DataFrame from the dictionary
+        speed_angle_dataframe = pd.DataFrame(data_dict)
+        speed_angle_dataframe.to_csv(os.path.join(save_fldr_path, 'speeds_and_angles.csv'))
+
