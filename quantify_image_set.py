@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider
+from sklearn.decomposition import PCA
 from constants import *
 
 
@@ -136,6 +137,87 @@ class SpheroidImage:
             boundary_pixels_full[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.stack((xb_close - x0, yb_close - y0), axis=1)
 
         return distance_magnitude, close_inds, outer_pixels_full - self.centroid, boundary_pixels_full
+
+    def pca(self, save_fldr_path, angles, speeds):
+
+        velocities = speeds[::, np.newaxis] * np.stack((np.cos(angles), np.sin(angles)), axis=1)
+
+        pca = PCA()
+        score = pca.fit_transform(velocities)
+        coeff = pca.components_
+        latent = pca.explained_variance_
+
+        transformed_angles = np.arctan2(score[:, 1], score[:, 0])
+        transformed_speeds = np.sqrt(score[:, 1] ** 2 + score[:, 0] ** 2)
+
+        # Define a function to plot an axis line at a given angle
+        def plot_axis(ax, angle, max_radius):
+            # Convert the angle to radians
+            angle_rad = np.deg2rad(angle)
+            # Plot the line
+            ax.plot([angle_rad, angle_rad], [0, max_radius], 'b')
+            ax.plot([angle_rad, angle_rad], [0, -max_radius], 'b')  # Plot in the negative direction as well
+
+        prin_angle1 = np.degrees(np.arctan2(coeff[1, 0], coeff[0, 0])) % 360
+        prin_angle2 = np.degrees(np.arctan2(coeff[1, 1], coeff[0, 1])) % 360
+        prin_speed1 = np.mean(np.abs(score[:, 0]))
+        prin_speed2 = np.mean(np.abs(score[:, 1]))
+
+        principle_angles = np.stack((prin_angle1, prin_angle2))
+        principle_speeds = np.stack((prin_speed1, prin_speed2))
+
+        # Plot original data
+        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+        ax.plot(angles, speeds, '.')
+
+        ax.set_title('Persistence speed (um/min) vs migration angle', **ARIAL)
+
+        # Annotation about PCA
+        principle_angles_str = ', '.join(map(str, principle_angles))
+        principle_speeds_str = ', '.join(map(str, principle_speeds))
+        ann_str = [f'Principle angles: ({principle_angles_str})',
+                   f'Mean principle speeds: ({principle_speeds_str})']
+        ax.annotate('\n'.join(ann_str), xy=(0.5, -0.1), xycoords='axes fraction', fontsize=14)
+
+        # Plot principle angles
+        a1 = np.deg2rad([principle_angles[0], principle_angles[0]])
+        s1 = [0, max(speeds)]
+        a2 = np.deg2rad([principle_angles[0] + 180, principle_angles[0] + 180])
+        s2 = [0, max(speeds)]
+        a3 = np.deg2rad([principle_angles[1], principle_angles[1]])
+        s3 = [0, max(speeds)]
+        a4 = np.deg2rad([principle_angles[1] + 180, principle_angles[1] + 180])
+        s4 = [0, max(speeds)]
+        ax.plot(a1, s1, "b")
+        ax.plot(a2, s2, "b")
+        ax.plot(a3, s3, "k")
+        ax.plot(a4, s4, "k")
+        ax.set_rlim(rmin=0)
+        plt.savefig(os.path.join(save_fldr_path, 'speed_vs_angle_with_principle_components.png'))
+        plt.close()
+
+        # Plot transformed data
+        fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
+        ax.plot(transformed_angles, transformed_speeds, '.')
+        ax.set_title('Transformed persistence speed (um/min) vs migration angle', **ARIAL)
+
+        a3 = np.deg2rad([0, 0])
+        s3 = [0, max(speeds)]
+        a4 = np.deg2rad([180, 180])
+        s4 = [0, max(speeds)]
+        a5 = np.deg2rad([90, 90])
+        s5 = [0, max(speeds)]
+        a6 = np.deg2rad([-90, -90])
+        s6 = [0, max(speeds)]
+
+        ax.plot(a3, s3, "b")
+        ax.plot(a4, s4, "b")
+        ax.plot(a5, s5, "k")
+        ax.plot(a6, s6, "k")
+        plt.savefig(os.path.join(save_fldr_path, 'principle_coordinates_speed_vs_angle.png'))
+        plt.close()
+
+
 
     def get_angles_outside_boundary(self, boundary):
         outer_pixels = self.get_pixle_coor_outside_boundary(boundary)
@@ -420,6 +502,11 @@ if __name__ == "__main__":
 
         print(f'Quantifying data {100 * i / len(image_fpaths):.1f}% complete')
 
+        _, img_ext = os.path.splitext(fname)
+
+        if not len(img_ext):
+            continue
+
         _, ext = os.path.splitext(fname)
         exp_num = int(fname.split('_')[0])
         day = int(re.search(PATTERN, fname).group(1))
@@ -445,19 +532,18 @@ if __name__ == "__main__":
 
         A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
 
-        areas = [A0,]
-        Irb_values = [None,]
-        Ixb_values = [None,]
-        Iyb_values = [None,]
-        Irc_values = [None,]
-        Ixc_values = [None,]
-        speed_values = np.zeros((len(image_set_for_this_experiment.images), outer_coordinates.shape[1]))
-        angles = np.concatenate((np.zeros((1, outer_coordinates.shape[1])), angles), axis=0)
+        areas = []
+        Irb_values = []
+        Ixb_values = []
+        Iyb_values = []
+        Irc_values = []
+        Ixc_values = []
+        speed_values = np.zeros(angles.shape)
 
 
         for j, img in enumerate(image_set_for_this_experiment.images[1:]):
             distances = distances[0]
-            metrics = PlotPixelDistancesandAngles(save_fldr_path, distances, angles[j + 1], outer_coordinates[0]
+            metrics = PlotPixelDistancesandAngles(save_fldr_path, distances, angles[j], outer_coordinates[0]
                                                   , np.sqrt(pixles[0,::,0] ** 2 + pixles[0,::,1] ** 2), pixles[j], 2, 1)
             Irb, Ixb, Iyb, Irc, Ixc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths\
                 , full_distances_xy, speed_array, speed_dimensionalized = metrics
@@ -468,10 +554,13 @@ if __name__ == "__main__":
             Iyb_values.append(Iyb)
             Irc_values.append(Irc)
             Ixc_values.append(Ixc)
-            speed_values[j + 1] = speed_dimensionalized
+            speed_values[j] = speed_dimensionalized
+
+            img.pca(save_fldr_path, angles[j], speed_dimensionalized)
 
         # Create a dictionary of the summary values
-        summary_dict = {'areas': areas,
+        summary_dict = {'t0 areas': A0 * np.ones(len(areas)),
+                        'areas': areas,
                         'Irb': Irb_values,
                         'Ixb': Ixb_values,
                         'Iyb': Iyb_values,
@@ -485,7 +574,7 @@ if __name__ == "__main__":
         columns_data = []
 
         # Loop through each time step
-        for j, t in enumerate(image_set_for_this_experiment.times):
+        for j, t in enumerate(image_set_for_this_experiment.times[1:]):
             # Extract the speed and angle values for this time step
             speed_col = speed_values[j, :]
             angle_col = angles[j, :]
