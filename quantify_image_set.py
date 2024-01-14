@@ -1,3 +1,6 @@
+import tkinter as tk
+import threading
+from tkinter import filedialog, ttk
 import os
 import re
 import cv2
@@ -507,170 +510,428 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     return Irb, Ixb, Iyb, Irc, Ixc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths, full_distances_xy, speed_array, pixel_size * speed_array
 
 
+
+
+class SpheroidAnalysisApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Spheroid Analysis")
+
+        # Folder selection
+        self.folder_label = tk.Label(root, text="Select Folder:")
+        self.folder_label.grid(row=0, column=0, sticky='w')
+        self.folder_button = tk.Button(root, text="Browse", command=self.select_folder)
+        self.folder_button.grid(row=0, column=1)
+
+        self.selected_folder = ""
+
+        # ID dictionary table
+        self.id_dict_frame = tk.Frame(root)
+        self.id_dict_frame.grid(row=1, column=0, columnspan=2)
+        self.id_dict_entries = []
+        self.create_id_dict_ui()
+
+        # Progress bar
+        self.progress = ttk.Progressbar(root, orient=tk.HORIZONTAL, length=300, mode='determinate')
+        self.progress.grid(row=2, column=0, columnspan=2, sticky='we')
+
+        # Run button
+        self.run_button = tk.Button(root, text="Run Analysis", command=self.run_analysis)
+        self.run_button.grid(row=3, column=0, columnspan=2)
+
+
+    def add_id_dict_row(self):
+        row = tk.Frame(self.id_dict_frame)
+        key_entry = tk.Entry(row)
+        value_entry = tk.Entry(row)
+        key_entry.pack(side=tk.LEFT)
+        value_entry.pack(side=tk.LEFT)
+        row.pack(side=tk.TOP, fill=tk.X)
+        self.id_dict_entries.append((key_entry, value_entry))
+
+    def remove_id_dict_row(self):
+        if len(self.id_dict_entries) > 1:
+            key_entry, value_entry = self.id_dict_entries.pop()
+            key_entry.destroy()
+            value_entry.destroy()
+
+    def create_id_dict_ui(self):
+        add_button = tk.Button(self.id_dict_frame, text="+", command=self.add_id_dict_row)
+        add_button.pack(side=tk.LEFT)
+        remove_button = tk.Button(self.id_dict_frame, text="-", command=self.remove_id_dict_row)
+        remove_button.pack(side=tk.LEFT)
+        self.add_id_dict_row()  # Add initial row
+
+    def build_id_dict(self):
+        id_dict = {}
+        for key_entry, value_entry in self.id_dict_entries:
+            key = key_entry.get()
+            value = value_entry.get()
+            if key and value:
+                id_dict[key] = value
+        return id_dict
+
+    def select_folder(self):
+        self.selected_folder = filedialog.askdirectory()
+        self.folder_label.config(text=f"Selected Folder: {self.selected_folder}")
+
+    def run_analysis(self):
+        # Start the analysis in a new thread
+        analysis_thread = threading.Thread(target=self.analysis_logic)
+        analysis_thread.start()
+
+    def analysis_logic(self):
+        data_fldr = self.selected_folder
+        id_dict = self.build_id_dict()
+        print('Analysis started')
+
+        # Filtering out directories from image_fpaths
+        image_fpaths = []
+
+        for f in os.listdir(data_fldr):
+            _, img_ext = os.path.splitext(f)
+
+            if img_ext in ['.tif', '.png', '.jpg']:
+                image_fpaths.append(f)
+
+        process_masked = True
+        processed_experiments = []
+
+        overall_summary_dataframe = pd.DataFrame()
+
+        for i, fname in enumerate(image_fpaths):
+
+            # Update progress bar
+            print(f'Quantifying data {100 * i / len(image_fpaths):.1f}% complete')
+            progress = 100 * i / len(image_fpaths)
+
+            # Schedule progress bar update in the main thread
+            self.root.after(0, self.update_progress_bar, progress)
+
+            _, img_ext = os.path.splitext(fname)
+
+            if not len(img_ext):
+                continue
+
+            _, ext = os.path.splitext(fname)
+            spheroid_num = int(fname.split('_')[0])
+            day = int(re.search(PATTERN, fname).group(1))
+            is_masked = fname.split('_')[-1][:-len(ext)] == MASKED
+
+            # Check if this experiment was already processed or has the propper masking
+            if (spheroid_num in processed_experiments) or (process_masked != is_masked):
+                continue
+
+            fpaths_for_this_experiment = []
+
+            for filename in image_fpaths:
+                if (int(filename.split('_')[0]) == spheroid_num) and (filename.split('_')[-1][:-len(ext)] == MASKED):
+                    fpaths_for_this_experiment.append(os.path.join(data_fldr, filename))
+
+            # Make a folder to store the data from this experiment
+            save_prefix = f'spheroid-{spheroid_num}'
+
+            for id_name, id_value in id_dict.items():
+                save_prefix = f'{id_name}-{id_value}_' + save_prefix
+
+            save_fldr_path = os.path.join(data_fldr, save_prefix + '_data')
+
+            if not os.path.isdir(save_fldr_path):
+                os.makedirs(save_fldr_path)
+
+            image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment)
+            distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary()
+
+            A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
+
+            areas = []
+            Irb_values = []
+            Ixb_values = []
+            Iyb_values = []
+            Irc_values = []
+            Ixc_values = []
+            max_speeds = []
+            mean_speeds = []
+            median_speeds = []
+            max_angles = []
+            mean_angles = []
+            median_angles = []
+            pa0_values = []
+            pa1_values = []
+            ps0_values = []
+            ps1_values = []
+            prin_speed_diff_values = []
+            principle_Irb_values = []
+            principle_Ixb_values = []
+            principle_Iyb_values = []
+
+            speed_values = np.zeros(angles.shape)
+            speed_angle_columns_data = []
+
+            for j in range(0, len(image_set_for_this_experiment.images) - 1):
+                img, t = image_set_for_this_experiment.images[j + 1], image_set_for_this_experiment.times[j + 1]
+
+                distances = distances[0]
+                metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances, angles[j], outer_coordinates[0]
+                                                      , np.sqrt(pixles[0, ::, 0] ** 2 + pixles[0, ::, 1] ** 2),
+                                                      pixles[j], 2, 1)
+                Irb, Ixb, Iyb, Irc, Ixc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths \
+                    , full_distances_xy, speed_array, speed_dimensionalized = metrics
+
+                areas.append(np.sum(img.img_array))
+                Irb_values.append(Irb)
+                Ixb_values.append(Ixb)
+                Iyb_values.append(Iyb)
+                Irc_values.append(Irc)
+                Ixc_values.append(Ixc)
+                max_speeds.append(np.max(speed_dimensionalized))
+                mean_speeds.append(np.mean(speed_dimensionalized))
+                median_speeds.append(np.median(speed_dimensionalized))
+                max_angles.append(np.max(angles[j, :]))
+                mean_angles.append(np.mean(angles[j, :]))
+                median_angles.append(np.median(angles[j, :]))
+
+                pca_metrics = img.pca(save_fldr_path, angles[j], speed_dimensionalized, t)
+                pa0, pa1, ps0, ps1, prin_speed_difference, principle_Irb, principle_Ixb \
+                    , principle_Iyb, transformed_angles, transformed_speeds = pca_metrics
+
+                # Append to the columns list with appropriate names
+                speed_angle_columns_data.append(('Speeds at time {}'.format(t), speed_dimensionalized))
+                speed_angle_columns_data.append(('Angles at time {}'.format(t), angles[j, :]))
+                speed_angle_columns_data.append(('PCA transformed Speeds at time {}'.format(t), transformed_speeds))
+                speed_angle_columns_data.append(('PCA transformed Angles at time {}'.format(t), transformed_angles))
+
+                pa0_values.append(pa0)
+                pa1_values.append(pa1)
+                ps0_values.append(ps0)
+                ps1_values.append(ps1)
+                prin_speed_diff_values.append(prin_speed_difference)
+                principle_Irb_values.append(principle_Irb)
+                principle_Ixb_values.append(principle_Ixb)
+                principle_Iyb_values.append(principle_Iyb)
+
+            # Create a dictionary of the summary values
+            summary_dict = {id_name: [id_value] * (len(image_set_for_this_experiment.images) - 1) for id_name, id_value
+                            in id_dict.items()}
+
+            summary_dict.update({'t0 areas': A0 * np.ones(len(areas)),
+                            'areas': areas,
+                            'Irb': Irb_values,
+                            'Ixb': Ixb_values,
+                            'Iyb': Iyb_values,
+                            'Irc': Irc_values,
+                            'Ixc': Ixc_values,
+                            'max_speed': max_speeds,
+                            'mean_speed': mean_speeds,
+                            'median_speed': median_speeds,
+                            'max_angle': max_angles,
+                            'mean_angle': mean_angles,
+                            'median_angle': median_angles,
+                            'principle0_angles': pa0_values,
+                            'principle1_angles': pa1_values,
+                            'principle0_speeds': ps0_values,
+                            'principle1_speeds': ps1_values,
+                            'prin_speed_difference': prin_speed_diff_values,
+                            'principle_Irb': principle_Irb_values,
+                            'principle_Ixb': principle_Ixb_values,
+                            'principle_Iyb': principle_Iyb_values
+                            })
+
+            summary_dataframe = pd.DataFrame(summary_dict, index=image_set_for_this_experiment.times[1:])
+            summary_dataframe.to_csv(os.path.join(save_fldr_path, 'summary.csv'))
+            # Concatenate current summary dataframe to overall summary dataframe
+            overall_summary_dataframe = pd.concat([overall_summary_dataframe, summary_dataframe])
+
+            # Create a dictionary from the speed and angles column data
+            data_dict = dict(speed_angle_columns_data)
+
+            # Create the DataFrame from the dictionary
+            speed_angle_dataframe = pd.DataFrame(data_dict)
+            speed_angle_dataframe.to_csv(os.path.join(data_fldr, save_prefix + '_speeds_and_angles.csv'))
+
+        # Save the overall summary dataframe to CSV at the end of the outermost loop
+        # TODO add file names as a column in results table
+        overall_summary_dataframe.to_csv(os.path.join(data_fldr, 'overall_summary.csv'))
+        # Complete the progress bar
+        self.root.after(0, self.update_progress_bar, 100)
+
+    def update_progress_bar(self, value):
+        self.progress['value'] = value
+
+    # TODO Add methods to manage id_dict table and update progress bar
+
+def main():
+    root = tk.Tk()
+    app = SpheroidAnalysisApp(root)
+    root.mainloop()
+
+
+
 if __name__ == "__main__":
-    data_fldr = r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt18 images to quantify\test'
-
-    id_dict = {'experiment': 18, 'condition': 'static'}
-    # Filtering out directories from image_fpaths
-    image_fpaths = []
-
-    for f in os.listdir(data_fldr):
-        _, img_ext = os.path.splitext(f)
-
-        if img_ext in ['.tif', '.png', '.jpg']:
-            image_fpaths.append(f)
-
-
-    process_masked = True
-    processed_experiments = []
-
-    overall_summary_dataframe = pd.DataFrame()
-
-    for i, fname in enumerate(image_fpaths):
-
-        print(f'Quantifying data {100 * i / len(image_fpaths):.1f}% complete')
-
-        _, img_ext = os.path.splitext(fname)
-
-        if not len(img_ext):
-            continue
-
-        _, ext = os.path.splitext(fname)
-        spheroid_num = int(fname.split('_')[0])
-        day = int(re.search(PATTERN, fname).group(1))
-        is_masked = fname.split('_')[-1][:-len(ext)] == MASKED
-
-        # Check if this experiment was already processed or has the propper masking
-        if (spheroid_num in processed_experiments) or (process_masked != is_masked):
-            continue
-
-        fpaths_for_this_experiment = []
-
-        for filename in image_fpaths:
-            if (int(filename.split('_')[0]) == spheroid_num) and (filename.split('_')[-1][:-len(ext)] == MASKED):
-                fpaths_for_this_experiment.append(os.path.join(data_fldr, filename))
-
-        # Make a folder to store the data from this experiment
-        save_prefix = f'spheroid-{spheroid_num}'
-
-        for id_name, id_value in id_dict.items():
-            save_prefix = f'{id_name}-{id_value}_' + save_prefix
-
-        save_fldr_path = os.path.join(data_fldr, save_prefix + '_data')
-
-        if not os.path.isdir(save_fldr_path):
-            os.makedirs(save_fldr_path)
-
-        image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment)
-        distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary()
-
-        A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
-
-        areas = []
-        Irb_values = []
-        Ixb_values = []
-        Iyb_values = []
-        Irc_values = []
-        Ixc_values = []
-        max_speeds = []
-        mean_speeds = []
-        median_speeds = []
-        max_angles = []
-        mean_angles = []
-        median_angles = []
-        pa0_values = []
-        pa1_values = []
-        ps0_values = []
-        ps1_values = []
-        prin_speed_diff_values = []
-        principle_Irb_values = []
-        principle_Ixb_values = []
-        principle_Iyb_values = []
-
-        speed_values = np.zeros(angles.shape)
-        speed_angle_columns_data = []
-
-
-        for j in range(0, len(image_set_for_this_experiment.images) - 1):
-
-            img, t = image_set_for_this_experiment.images[j + 1], image_set_for_this_experiment.times[j + 1]
-
-            distances = distances[0]
-            metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances, angles[j], outer_coordinates[0]
-                                                  , np.sqrt(pixles[0,::,0] ** 2 + pixles[0,::,1] ** 2), pixles[j], 2, 1)
-            Irb, Ixb, Iyb, Irc, Ixc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths\
-                , full_distances_xy, speed_array, speed_dimensionalized = metrics
-
-            areas.append(np.sum(img.img_array))
-            Irb_values.append(Irb)
-            Ixb_values.append(Ixb)
-            Iyb_values.append(Iyb)
-            Irc_values.append(Irc)
-            Ixc_values.append(Ixc)
-            max_speeds.append(np.max(speed_dimensionalized))
-            mean_speeds.append(np.mean(speed_dimensionalized))
-            median_speeds.append(np.median(speed_dimensionalized))
-            max_angles.append(np.max(angles[j, :]))
-            mean_angles.append(np.mean(angles[j, :]))
-            median_angles.append(np.median(angles[j, :]))
-
-            pca_metrics = img.pca(save_fldr_path, angles[j], speed_dimensionalized, t)
-            pa0, pa1, ps0, ps1, prin_speed_difference, principle_Irb, principle_Ixb\
-                , principle_Iyb, transformed_angles, transformed_speeds = pca_metrics
-
-            # Append to the columns list with appropriate names
-            speed_angle_columns_data.append(('Speeds at time {}'.format(t), speed_dimensionalized))
-            speed_angle_columns_data.append(('Angles at time {}'.format(t), angles[j, :]))
-            speed_angle_columns_data.append(('PCA transformed Speeds at time {}'.format(t), transformed_speeds))
-            speed_angle_columns_data.append(('PCA transformed Angles at time {}'.format(t), transformed_angles))
-
-            pa0_values.append(pa0)
-            pa1_values.append(pa1)
-            ps0_values.append(ps0)
-            ps1_values.append(ps1)
-            prin_speed_diff_values.append(prin_speed_difference)
-            principle_Irb_values.append(principle_Irb)
-            principle_Ixb_values.append(principle_Ixb)
-            principle_Iyb_values.append(principle_Iyb)
-
-        # Create a dictionary of the summary values
-        summary_dict = {id_name: [id_value] * (len(image_set_for_this_experiment.images) - 1) for id_name, id_value in id_dict.items()}
-
-        summary_dict = {'t0 areas': A0 * np.ones(len(areas)),
-                        'areas': areas,
-                        'Irb': Irb_values,
-                        'Ixb': Ixb_values,
-                        'Iyb': Iyb_values,
-                        'Irc': Irc_values,
-                        'Ixc': Ixc_values,
-                        'max_speed': max_speeds,
-                        'mean_speed': mean_speeds,
-                        'median_speed': median_speeds,
-                        'max_angle': max_angles,
-                        'mean_angle': mean_angles,
-                        'median_angle': median_angles,
-                        'principle0_angles': pa0_values,
-                        'principle1_angles': pa1_values,
-                        'principle0_speeds': ps0_values,
-                        'principle1_speeds': ps1_values,
-                        'prin_speed_difference': prin_speed_diff_values,
-                        'principle_Irb': principle_Irb_values,
-                        'principle_Ixb': principle_Ixb_values,
-                        'principle_Iyb': principle_Iyb_values
-                        }
-
-        summary_dataframe = pd.DataFrame(summary_dict, index=image_set_for_this_experiment.times[1:])
-        summary_dataframe.to_csv(os.path.join(save_fldr_path, 'summary.csv'))
-        # Concatenate current summary dataframe to overall summary dataframe
-        overall_summary_dataframe = pd.concat([overall_summary_dataframe, summary_dataframe])
-
-        # Create a dictionary from the speed and angles column data
-        data_dict = dict(speed_angle_columns_data)
-
-        # Create the DataFrame from the dictionary
-        speed_angle_dataframe = pd.DataFrame(data_dict)
-        speed_angle_dataframe.to_csv(os.path.join(data_fldr, save_prefix + '_speeds_and_angles.csv'))
-
-    # Save the overall summary dataframe to CSV at the end of the outermost loop
-    overall_summary_dataframe.to_csv(os.path.join(data_fldr, 'overall_summary.csv'))
+    main()
+    # data_fldr = r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt18 images to quantify\test'
+    #
+    # id_dict = {'experiment': 18, 'condition': 'static'}
+    # # Filtering out directories from image_fpaths
+    # image_fpaths = []
+    #
+    # for f in os.listdir(data_fldr):
+    #     _, img_ext = os.path.splitext(f)
+    #
+    #     if img_ext in ['.tif', '.png', '.jpg']:
+    #         image_fpaths.append(f)
+    #
+    #
+    # process_masked = True
+    # processed_experiments = []
+    #
+    # overall_summary_dataframe = pd.DataFrame()
+    #
+    # for i, fname in enumerate(image_fpaths):
+    #
+    #     print(f'Quantifying data {100 * i / len(image_fpaths):.1f}% complete')
+    #
+    #     _, img_ext = os.path.splitext(fname)
+    #
+    #     if not len(img_ext):
+    #         continue
+    #
+    #     _, ext = os.path.splitext(fname)
+    #     spheroid_num = int(fname.split('_')[0])
+    #     day = int(re.search(PATTERN, fname).group(1))
+    #     is_masked = fname.split('_')[-1][:-len(ext)] == MASKED
+    #
+    #     # Check if this experiment was already processed or has the propper masking
+    #     if (spheroid_num in processed_experiments) or (process_masked != is_masked):
+    #         continue
+    #
+    #     fpaths_for_this_experiment = []
+    #
+    #     for filename in image_fpaths:
+    #         if (int(filename.split('_')[0]) == spheroid_num) and (filename.split('_')[-1][:-len(ext)] == MASKED):
+    #             fpaths_for_this_experiment.append(os.path.join(data_fldr, filename))
+    #
+    #     # Make a folder to store the data from this experiment
+    #     save_prefix = f'spheroid-{spheroid_num}'
+    #
+    #     for id_name, id_value in id_dict.items():
+    #         save_prefix = f'{id_name}-{id_value}_' + save_prefix
+    #
+    #     save_fldr_path = os.path.join(data_fldr, save_prefix + '_data')
+    #
+    #     if not os.path.isdir(save_fldr_path):
+    #         os.makedirs(save_fldr_path)
+    #
+    #     image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment)
+    #     distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary()
+    #
+    #     A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
+    #
+    #     areas = []
+    #     Irb_values = []
+    #     Ixb_values = []
+    #     Iyb_values = []
+    #     Irc_values = []
+    #     Ixc_values = []
+    #     max_speeds = []
+    #     mean_speeds = []
+    #     median_speeds = []
+    #     max_angles = []
+    #     mean_angles = []
+    #     median_angles = []
+    #     pa0_values = []
+    #     pa1_values = []
+    #     ps0_values = []
+    #     ps1_values = []
+    #     prin_speed_diff_values = []
+    #     principle_Irb_values = []
+    #     principle_Ixb_values = []
+    #     principle_Iyb_values = []
+    #
+    #     speed_values = np.zeros(angles.shape)
+    #     speed_angle_columns_data = []
+    #
+    #
+    #     for j in range(0, len(image_set_for_this_experiment.images) - 1):
+    #
+    #         img, t = image_set_for_this_experiment.images[j + 1], image_set_for_this_experiment.times[j + 1]
+    #
+    #         distances = distances[0]
+    #         metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances, angles[j], outer_coordinates[0]
+    #                                               , np.sqrt(pixles[0,::,0] ** 2 + pixles[0,::,1] ** 2), pixles[j], 2, 1)
+    #         Irb, Ixb, Iyb, Irc, Ixc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths\
+    #             , full_distances_xy, speed_array, speed_dimensionalized = metrics
+    #
+    #         areas.append(np.sum(img.img_array))
+    #         Irb_values.append(Irb)
+    #         Ixb_values.append(Ixb)
+    #         Iyb_values.append(Iyb)
+    #         Irc_values.append(Irc)
+    #         Ixc_values.append(Ixc)
+    #         max_speeds.append(np.max(speed_dimensionalized))
+    #         mean_speeds.append(np.mean(speed_dimensionalized))
+    #         median_speeds.append(np.median(speed_dimensionalized))
+    #         max_angles.append(np.max(angles[j, :]))
+    #         mean_angles.append(np.mean(angles[j, :]))
+    #         median_angles.append(np.median(angles[j, :]))
+    #
+    #         pca_metrics = img.pca(save_fldr_path, angles[j], speed_dimensionalized, t)
+    #         pa0, pa1, ps0, ps1, prin_speed_difference, principle_Irb, principle_Ixb\
+    #             , principle_Iyb, transformed_angles, transformed_speeds = pca_metrics
+    #
+    #         # Append to the columns list with appropriate names
+    #         speed_angle_columns_data.append(('Speeds at time {}'.format(t), speed_dimensionalized))
+    #         speed_angle_columns_data.append(('Angles at time {}'.format(t), angles[j, :]))
+    #         speed_angle_columns_data.append(('PCA transformed Speeds at time {}'.format(t), transformed_speeds))
+    #         speed_angle_columns_data.append(('PCA transformed Angles at time {}'.format(t), transformed_angles))
+    #
+    #         pa0_values.append(pa0)
+    #         pa1_values.append(pa1)
+    #         ps0_values.append(ps0)
+    #         ps1_values.append(ps1)
+    #         prin_speed_diff_values.append(prin_speed_difference)
+    #         principle_Irb_values.append(principle_Irb)
+    #         principle_Ixb_values.append(principle_Ixb)
+    #         principle_Iyb_values.append(principle_Iyb)
+    #
+    #     # Create a dictionary of the summary values
+    #     summary_dict = {id_name: [id_value] * (len(image_set_for_this_experiment.images) - 1) for id_name, id_value in id_dict.items()}
+    #
+    #     summary_dict = {'t0 areas': A0 * np.ones(len(areas)),
+    #                     'areas': areas,
+    #                     'Irb': Irb_values,
+    #                     'Ixb': Ixb_values,
+    #                     'Iyb': Iyb_values,
+    #                     'Irc': Irc_values,
+    #                     'Ixc': Ixc_values,
+    #                     'max_speed': max_speeds,
+    #                     'mean_speed': mean_speeds,
+    #                     'median_speed': median_speeds,
+    #                     'max_angle': max_angles,
+    #                     'mean_angle': mean_angles,
+    #                     'median_angle': median_angles,
+    #                     'principle0_angles': pa0_values,
+    #                     'principle1_angles': pa1_values,
+    #                     'principle0_speeds': ps0_values,
+    #                     'principle1_speeds': ps1_values,
+    #                     'prin_speed_difference': prin_speed_diff_values,
+    #                     'principle_Irb': principle_Irb_values,
+    #                     'principle_Ixb': principle_Ixb_values,
+    #                     'principle_Iyb': principle_Iyb_values
+    #                     }
+    #
+    #     summary_dataframe = pd.DataFrame(summary_dict, index=image_set_for_this_experiment.times[1:])
+    #     summary_dataframe.to_csv(os.path.join(save_fldr_path, 'summary.csv'))
+    #     # Concatenate current summary dataframe to overall summary dataframe
+    #     overall_summary_dataframe = pd.concat([overall_summary_dataframe, summary_dataframe])
+    #
+    #     # Create a dictionary from the speed and angles column data
+    #     data_dict = dict(speed_angle_columns_data)
+    #
+    #     # Create the DataFrame from the dictionary
+    #     speed_angle_dataframe = pd.DataFrame(data_dict)
+    #     speed_angle_dataframe.to_csv(os.path.join(data_fldr, save_prefix + '_speeds_and_angles.csv'))
+    #
+    # # Save the overall summary dataframe to CSV at the end of the outermost loop
+    # overall_summary_dataframe.to_csv(os.path.join(data_fldr, 'overall_summary.csv'))
 
