@@ -574,7 +574,6 @@ class SpheroidAnalysisApp:
 
 
     def on_close_analyze_window(self):
-        # TODO complete this method. Be sire
         # Destroy and reset UI components to None
         if self.analyze_window:
             self.analyze_window.destroy()  # Destroy the binarize window
@@ -700,6 +699,7 @@ class SpheroidAnalysisApp:
             Iyb_values = []
             Irc_values = []
             Ixc_values = []
+            Iyc_values = []
             max_speeds = []
             mean_speeds = []
             median_speeds = []
@@ -725,7 +725,7 @@ class SpheroidAnalysisApp:
                 metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances, angles[j], outer_coordinates[0]
                                                       , np.sqrt(pixles[0, ::, 0] ** 2 + pixles[0, ::, 1] ** 2),
                                                       pixles[j], 2, 1)
-                Irb, Ixb, Iyb, Irc, Ixc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths \
+                Irb, Ixb, Iyb, Irc, Ixc, Iyc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths \
                     , full_distances_xy, speed_array, speed_dimensionalized = metrics
 
                 areas.append(np.sum(img.img_array))
@@ -734,6 +734,7 @@ class SpheroidAnalysisApp:
                 Iyb_values.append(Iyb)
                 Irc_values.append(Irc)
                 Ixc_values.append(Ixc)
+                Iyc_values.append(Iyc)
                 max_speeds.append(np.max(speed_dimensionalized))
                 mean_speeds.append(np.mean(speed_dimensionalized))
                 median_speeds.append(np.median(speed_dimensionalized))
@@ -771,6 +772,7 @@ class SpheroidAnalysisApp:
                             'Iyb': Iyb_values,
                             'Irc': Irc_values,
                             'Ixc': Ixc_values,
+                            'Iyc': Iyc_values,
                             'max_speed': max_speeds,
                             'mean_speed': mean_speeds,
                             'median_speed': median_speeds,

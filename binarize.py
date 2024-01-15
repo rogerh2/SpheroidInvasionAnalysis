@@ -5,8 +5,29 @@ import cv2
 import os
 from constants import *
 
-# Define the BinarizedImage class with required functionalities
+
 class BinarizedImage:
+    """
+    BinarizedImage loads a grayscale image, binarizes it using a specified threshold, and
+    sets up the path for saving outputs.
+
+    Args:
+        raw_image_path (str): File path of the raw image.
+        save_path (str, optional): Directory path to save processed images. If None, uses the
+                                   directory of the raw image.
+        threshold (int, optional): Threshold value for binarization. Defaults to 36.
+
+    Attributes:
+        img_path (str): Path of the raw image.
+        img_name (str): Name of the image file.
+        img_ext (str): Extension of the image file.
+        save_fldr_path (str): Directory to save processed images.
+        grayscale_array (ndarray): Loaded grayscale image.
+        binary_array (ndarray): Binarized version of the grayscale image.
+        threshold (int): Used threshold value.
+        contours (list): List of contours found in the image.
+        last_guassian_kernel (tuple): Last used Gaussian kernel for blurring.
+    """
 
     def __init__(self, raw_image_path, save_path=None, threshold=36):
         self.img_path = raw_image_path
@@ -27,7 +48,15 @@ class BinarizedImage:
         self.last_guassian_kernel = None
 
     def update_mask(self, threshold, boundary=None):
-        """Update the mask based on a threshold and an optional boundary."""
+        """
+        This method updates the binary array based on a new threshold and an optional boundary. If
+        a boundary is provided, the threshold is applied only within that boundary.
+
+        Args:
+            threshold (int): New threshold value for binarization.
+            boundary (list of tuples, optional): Points defining the boundary within which to apply
+                                                 the threshold. If None, applies to the whole image.
+        """
 
         if boundary is not None:
             # Create a mask for the region inside the boundary
@@ -42,6 +71,14 @@ class BinarizedImage:
             self.binary_array = self.grayscale_array >= int(threshold)
 
     def auto_contour(self, guassian_kernel=None):
+        """
+        This method applies Gaussian blurring (if a kernel is provided) before finding contours.
+        The contours are sorted by area in descending order.
+
+        Args:
+            guassian_kernel (tuple, optional): Kernel size for Gaussian blurring. If None, blurring
+                                               is skipped.
+        """
         # Store the last used Gaussian kernel in a class attribute
         self.last_guassian_kernel = guassian_kernel
 
@@ -62,6 +99,14 @@ class BinarizedImage:
         self.contours = contours
 
     def find_spheroid_centroid(self):
+        """
+        Calculate the centroid of the spheroid (binarized image).
+
+        Computes the center of mass of the binarized image, returning the X and Y coordinates.
+
+        Returns:
+            tuple: The (x, y) coordinates of the centroid.
+        """
         # Calculate the center of mass of the binarized image
         M = cv2.moments(self.binary_array.astype(np.uint8))
         if M["m00"] != 0:
@@ -73,6 +118,12 @@ class BinarizedImage:
         return cX, cY
 
     def create_circular_mask(self):
+        """
+        Create and apply a circular mask centered at the spheroid centroid. The radius of the circle is the smallest
+        distance from the centroid to the image edges. This mask is then applied to the binary array.
+        """
+
+        # Find the centroid
         cX, cY = self.find_spheroid_centroid()
 
         # Calculate the largest radius possible before hitting the image edge
@@ -87,7 +138,13 @@ class BinarizedImage:
         self.binary_array = np.logical_and(self.binary_array, mask)
 
     def apply_contour_threshold(self):
-        """Apply a local threshold of 256 to all contours except the largest."""
+        """
+        Apply a higher threshold to all contours except the largest one.
+
+        This method is used to further refine the binarization by setting a high threshold value
+        (256) to smaller contours.
+        """
+
         if self.contours:
             # Create a mask for all contours except the largest one
             mask = np.zeros_like(self.grayscale_array, dtype=np.uint8)
@@ -97,6 +154,10 @@ class BinarizedImage:
             self.binary_array[mask] = 256
 
     def save_binarized_image(self):
+        """
+        Save the binarized image to the designated folder. The method saves two versions of the image: one with and one
+        without the circular mask. The images are named based on the threshold and kernel size used.
+        """
         if self.last_guassian_kernel is None:
             k_size = 0
         else:
