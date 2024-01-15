@@ -18,6 +18,14 @@ ARIAL = {'fontname': 'Arial',
 
 
 class SpheroidImage:
+    """
+    Initializes the SpheroidImage object with an image file.
+
+    Parameters:
+    - fpath (str): The file path to the image of the spheroid object.
+
+    The initializer loads the image from the given file path and prepares it for analysis.
+    """
 
     def __init__(self, fpath):
         source_image = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)
@@ -44,6 +52,13 @@ class SpheroidImage:
         self.x_coords, self.y_coords = np.meshgrid(y_range, x_range)
 
     def center_boundary(self, boundary):
+        """
+        Centers the initial boundary with the spheroid
+
+        Parameters:
+        - boundary (array-like): The coordinates defining the boundary of the spheroid object.
+        """
+
         # Calculate moments of the binary image for centering the contour
         M = cv2.moments(boundary)
         bX = int(M["m10"] / M["m00"])
@@ -65,10 +80,11 @@ class SpheroidImage:
         return np.stack((x_coor_outside_bound, y_coor_outside_bound), axis=1)
 
     def intersection_distance(self, boundary):
-        # IntersectionDistance finds the minimum distance from the Day0 boundary to a point of interest (POI).
-        # The POI is on a line between the spheroid centroid (centroid_loc, x0) and the invaded cell pixels (outer_pixels, x1).
-        # The function zeros the coordinate system at x0. Each point should be arranged as point = [x_loc; y_loc]
-        # Outerpixels is fed in as one {cell} at a time
+        """
+        intersection_distance finds the minimum distance from the initial boundary to the pixels outside the boundary.
+        measured as the length of the line between the spheroid centroid (centroid_loc, x0) and the invaded cell pixels
+        (outer_pixels, x1). The function zeros the coordinate system at x0.
+        """
 
         outer_pixels_full = self.get_pixle_coor_outside_boundary(boundary)
 
@@ -594,6 +610,7 @@ class SpheroidAnalysisApp:
             if img_ext in ['.tif', '.png', '.jpg']:
                 image_fpaths.append(f)
 
+        # TODO remove process_masked and any reference to masking, just process all data
         process_masked = True
         processed_experiments = []
 
@@ -757,8 +774,6 @@ class SpheroidAnalysisApp:
 
     def update_progress_bar(self, value):
         self.progress['value'] = value
-
-    # TODO Add methods to manage id_dict table and update progress bar
 
 def main():
     root = tk.Tk()
