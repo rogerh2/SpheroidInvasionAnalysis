@@ -1,6 +1,6 @@
 # Importing required modules for GUI and image processing
 from tkinter import Canvas, Toplevel, Checkbutton, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
-    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk
+    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED
 from PIL import Image, ImageTk
 import numpy as np
 import cv2
@@ -26,7 +26,7 @@ class MainMenu:
         self.frame.pack(fill='both', expand=True)
 
         # Add Main Menu buttons
-        self.binarize_button = Button(self.frame, text="Binarize", command=self.binarize_ap.open_binarize_window)
+        self.binarize_button = Button(self.frame, text="Binarize", command=self.binarize_ap.open_folder_selection_popup)
         self.binarize_button.pack()  # You will need to adjust the positioning according to your layout
 
         self.process_button = Button(self.frame, text="Analyize", command=self.analyze_ap.open_analyze_window)
@@ -93,19 +93,13 @@ class ImageBinarizationApp:
         self.apply_button = None
         self.draw_var = None
         self.draw_check = None
+        self.popup = None
+        self.continue_button = None
 
     def resize_image_canvas(self, event):
         # Calculate the new size while maintaining the aspect ratio
         if self.current_image and self.binarize_window.winfo_exists():
             self.update_canvas()
-
-    def open_folder_dialog(self, folder_type):
-        folder_selected = filedialog.askdirectory()
-        if folder_type == "load":
-            self.image_folder_path = folder_selected
-            self.image_list = [f for f in os.listdir(self.image_folder_path) if f.endswith('.tif')]
-        elif folder_type == "save":
-            self.save_folder_path = folder_selected
 
     def load_image(self, image_path):
         # Load and display the image
@@ -265,13 +259,59 @@ class ImageBinarizationApp:
                     img_canvas.create_image(0, 0, anchor="nw", image=photo_image)
                     img_canvas.image = photo_image  # Keep a reference to avoid garbage collection
 
-    def open_binarize_window(self):
+    def open_folder_selection_popup(self):
         # Hide the main window
         self.master.withdraw()
 
-        # Open dialogs for folder selection
+        # Create the popup window
+        self.popup = Toplevel()
+        self.popup.title("Folder Selection")
+
+        # TODO make this more descriptive
+        Label(self.popup, text="Please select the folders").pack(padx=10, pady=10)
+
+        Button(self.popup, text="Select Load Folder", command=self.select_load_folder).pack(padx=10, pady=5)
+        Button(self.popup, text="Select Save Folder", command=self.select_save_folder).pack(padx=10, pady=5)
+
+        self.continue_button = Button(self.popup, text="Continue", command=self.open_binarize_window, state=DISABLED)
+        self.continue_button.pack(padx=10, pady=10)
+
+        self.popup.protocol("WM_DELETE_WINDOW", self.on_close_popup)  # Handle the close event
+
+    def open_folder_dialog(self, folder_type):
+        folder_selected = filedialog.askdirectory()
+        if folder_type == "load":
+            self.image_folder_path = folder_selected
+            self.image_list = [f for f in os.listdir(self.image_folder_path) if f.endswith('.tif')]
+        elif folder_type == "save":
+            self.save_folder_path = folder_selected
+
+    def select_load_folder(self):
         self.open_folder_dialog("load")
+        self.check_folder_selection()
+
+    def select_save_folder(self):
         self.open_folder_dialog("save")
+        self.check_folder_selection()
+
+    def check_folder_selection(self):
+        if self.image_folder_path and self.save_folder_path:
+            self.continue_button['state'] = NORMAL
+
+    def on_close_popup(self):
+        """Close the popup window and reset related variables to their default values."""
+        if self.popup:
+            self.popup.destroy()  # Destroy the popup pane window
+            self.popup = None  # Reset the window variable
+
+        self.continue_button = None
+        self.master.deiconify()
+
+    def open_binarize_window(self):
+        if self.popup:
+            self.popup.destroy()  # Destroy the popup pane window
+            self.popup = None  # Reset the window variablees
+            self.continue_button = None
 
         # Create the binarize window
         self.binarize_window = Toplevel()
@@ -577,7 +617,7 @@ class SpheroidAnalysisApp:
         self.build_id_dict()
 
         if self.analyze_window:
-            self.analyze_window.destroy()  # Destroy the binarize window
+            self.analyze_window.destroy()  # Destroy the analysis window
             self.analyze_window = None  # Reset the window variable
 
         # Reset all components to None
