@@ -5,9 +5,7 @@ from PIL import Image, ImageTk
 import numpy as np
 import cv2
 import os
-from constants import *
 import pandas as pd
-import re
 import threading
 
 from binarize import BinarizedImage
@@ -631,7 +629,7 @@ class SpheroidAnalysisApp:
 
     def analysis_logic(self):
         data_fldr = self.selected_folder
-        id_dict = self.build_id_dict()
+        master_id_dict = self.build_id_dict()
         print('Analysis started')
 
         # Filtering out directories from image_fpaths
@@ -643,7 +641,6 @@ class SpheroidAnalysisApp:
             if img_ext in ['.tif', '.png', '.jpg']:
                 image_fpaths.append(f)
 
-        process_masked = True
         processed_experiments = []
 
         overall_summary_dataframe = pd.DataFrame()
@@ -664,21 +661,22 @@ class SpheroidAnalysisApp:
 
             _, ext = os.path.splitext(fname)
             spheroid_num = int(fname.split('_')[0])
-            day = int(re.search(PATTERN, fname).group(1))
-            is_masked = fname.split('_')[-1][:-len(ext)] == MASKED
 
             # Check if this experiment was already processed or has the propper masking
-            if (spheroid_num in processed_experiments) or (process_masked != is_masked):
+            if (spheroid_num in processed_experiments):
                 continue
 
+            processed_experiments.append(spheroid_num)
             fpaths_for_this_experiment = []
 
             for filename in image_fpaths:
-                if (int(filename.split('_')[0]) == spheroid_num) and (filename.split('_')[-1][:-len(ext)] == MASKED):
+                if (int(filename.split('_')[0]) == spheroid_num):
                     fpaths_for_this_experiment.append(os.path.join(data_fldr, filename))
 
             # Make a folder to store the data from this experiment
-            save_prefix = f'spheroid-{spheroid_num}'
+            id_dict = {'spheroid': spheroid_num}
+            id_dict.update(master_id_dict.copy())
+            save_prefix = ''
 
             for id_name, id_value in id_dict.items():
                 save_prefix = f'{id_name}-{id_value}_' + save_prefix
@@ -714,8 +712,7 @@ class SpheroidAnalysisApp:
             principle_Irb_values = []
             principle_Ixb_values = []
             principle_Iyb_values = []
-
-            speed_values = np.zeros(angles.shape)
+            fname_list = []
             speed_angle_columns_data = []
 
             for j in range(0, len(image_set_for_this_experiment.images) - 1):
@@ -728,6 +725,7 @@ class SpheroidAnalysisApp:
                 Irb, Ixb, Iyb, Irc, Ixc, Iyc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths \
                     , full_distances_xy, speed_array, speed_dimensionalized = metrics
 
+                fname_list.append(img.fname)
                 areas.append(np.sum(img.img_array))
                 Irb_values.append(Irb)
                 Ixb_values.append(Ixb)
@@ -765,32 +763,35 @@ class SpheroidAnalysisApp:
             summary_dict = {id_name: [id_value] * (len(image_set_for_this_experiment.images) - 1) for id_name, id_value
                             in id_dict.items()}
 
-            summary_dict.update({'t0 areas': A0 * np.ones(len(areas)),
-                            'areas': areas,
-                            'Irb': Irb_values,
-                            'Ixb': Ixb_values,
-                            'Iyb': Iyb_values,
-                            'Irc': Irc_values,
-                            'Ixc': Ixc_values,
-                            'Iyc': Iyc_values,
-                            'max_speed': max_speeds,
-                            'mean_speed': mean_speeds,
-                            'median_speed': median_speeds,
-                            'max_angle': max_angles,
-                            'mean_angle': mean_angles,
-                            'median_angle': median_angles,
-                            'principle0_angles': pa0_values,
-                            'principle1_angles': pa1_values,
-                            'principle0_speeds': ps0_values,
-                            'principle1_speeds': ps1_values,
-                            'prin_speed_difference': prin_speed_diff_values,
-                            'principle_Irb': principle_Irb_values,
-                            'principle_Ixb': principle_Ixb_values,
-                            'principle_Iyb': principle_Iyb_values
-                            })
+            summary_dict.update({
+                'file': fname_list,
+                'times': image_set_for_this_experiment.times[1:],
+                't0 areas': A0 * np.ones(len(areas)),
+                'areas': areas,
+                'Irb': Irb_values,
+                'Ixb': Ixb_values,
+                'Iyb': Iyb_values,
+                'Irc': Irc_values,
+                'Ixc': Ixc_values,
+                'Iyc': Iyc_values,
+                'max_speed': max_speeds,
+                'mean_speed': mean_speeds,
+                'median_speed': median_speeds,
+                'max_angle': max_angles,
+                'mean_angle': mean_angles,
+                'median_angle': median_angles,
+                'principle0_angles': pa0_values,
+                'principle1_angles': pa1_values,
+                'principle0_speeds': ps0_values,
+                'principle1_speeds': ps1_values,
+                'prin_speed_difference': prin_speed_diff_values,
+                'principle_Irb': principle_Irb_values,
+                'principle_Ixb': principle_Ixb_values,
+                'principle_Iyb': principle_Iyb_values
+            })
 
-            summary_dataframe = pd.DataFrame(summary_dict, index=image_set_for_this_experiment.times[1:])
-            summary_dataframe.to_csv(os.path.join(save_fldr_path, 'summary.csv'))
+            summary_dataframe = pd.DataFrame(summary_dict)
+            summary_dataframe.to_csv(os.path.join(save_fldr_path, 'summary.csv'), index=False)
             # Concatenate current summary dataframe to overall summary dataframe
             overall_summary_dataframe = pd.concat([overall_summary_dataframe, summary_dataframe])
 
@@ -799,11 +800,11 @@ class SpheroidAnalysisApp:
 
             # Create the DataFrame from the dictionary
             speed_angle_dataframe = pd.DataFrame(data_dict)
-            speed_angle_dataframe.to_csv(os.path.join(data_fldr, save_prefix + '_speeds_and_angles.csv'))
+            speed_angle_dataframe.to_csv(os.path.join(data_fldr, save_prefix + '_speeds_and_angles.csv'), index=False)
 
         # Save the overall summary dataframe to CSV at the end of the outermost loop
-        # TODO add file names as a column in results table
-        overall_summary_dataframe.to_csv(os.path.join(data_fldr, 'overall_summary.csv'))
+        overall_summary_dataframe.to_csv(os.path.join(data_fldr, 'overall_summary.csv'), index=False)
+
         # Complete the progress bar
         self.analyze_window.after(0, self.update_progress_bar, 100)
 

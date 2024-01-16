@@ -165,14 +165,23 @@ class BinarizedImage:
 
         save_name = f'{self.img_name}_binarized_thresh-{self.threshold}_kernel-{k_size}'
 
-        # Save the binarized image with the circular mask
-        unmasked_image = Image.fromarray((self.binary_array * 255).astype(np.uint8))
-        unmasked_image.save(os.path.join(self.save_fldr_path
-                        , f'{save_name}_{UNMASKED}{self.img_ext}'))
+        # Define folder names for masked and unmasked images
+        masked_folder = 'masked'
+        unmasked_folder = 'unmasked'
 
-        self.create_circular_mask()
+        # Create the directories if they don't exist
+        masked_folder_path = os.path.join(self.save_fldr_path, masked_folder)
+        unmasked_folder_path = os.path.join(self.save_fldr_path, unmasked_folder)
+        os.makedirs(masked_folder_path, exist_ok=True)
+        os.makedirs(unmasked_folder_path, exist_ok=True)
 
         # Save the binarized image without the circular mask
-        # TODO make a masked folder and unmasked folder and save each in their respective folder
+        unmasked_image = Image.fromarray((self.binary_array * 255).astype(np.uint8))
+        unmasked_image.save(os.path.join(unmasked_folder_path, f'{save_name}_{UNMASKED}{self.img_ext}'))
+
+        # Apply the mask to the binary_array
+        self.create_circular_mask()
+
+        # Save the binarized image with the circular mask
         masked_image = Image.fromarray((self.binary_array * 255).astype(np.uint8))
-        masked_image.save(os.path.join(self.save_fldr_path, f'{save_name}_{MASKED}{self.img_ext}'))
+        masked_image.save(os.path.join(masked_folder_path, f'{save_name}_{MASKED}{self.img_ext}'))
