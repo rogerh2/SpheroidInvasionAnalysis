@@ -540,6 +540,7 @@ class SpheroidAnalysisApp:
         self.run_button = None
         self.selected_folder = ""
         self.id_dict_entries = []
+        self.id_dict_keys = ['experiment #']
 
     def open_analyze_window(self):
         # Hide the main window
@@ -573,6 +574,8 @@ class SpheroidAnalysisApp:
 
     def on_close_analyze_window(self):
         # Destroy and reset UI components to None
+        self.build_id_dict()
+
         if self.analyze_window:
             self.analyze_window.destroy()  # Destroy the binarize window
             self.analyze_window = None  # Reset the window variable
@@ -602,20 +605,36 @@ class SpheroidAnalysisApp:
             key_entry.destroy()
             value_entry.destroy()
 
+            # Remove the last key from self.id_dict_keys
+            if self.id_dict_keys:
+                self.id_dict_keys.pop()
+
     def create_id_dict_ui(self):
         add_button = Button(self.id_dict_frame, text="+", command=self.add_id_dict_row)
         add_button.pack(side=LEFT)
         remove_button = Button(self.id_dict_frame, text="-", command=self.remove_id_dict_row)
         remove_button.pack(side=LEFT)
-        self.add_id_dict_row()  # Add initial row
+
+        for key in self.id_dict_keys:
+            self.add_id_dict_row()
+            self.id_dict_entries[-1][0].insert(0, key)  # Set the last key entry to the value of 'key'
 
     def build_id_dict(self):
         id_dict = {}
+        keys = []
+
         for key_entry, value_entry in self.id_dict_entries:
             key = key_entry.get()
             value = value_entry.get()
             if key and value:
                 id_dict[key] = value
+                keys.append(key)  # Update self.id_dict_keys with the new keys
+            elif key:
+                id_dict[key] = ''
+                keys.append(key)  # Update self.id_dict_keys with the new keys
+
+        self.id_dict_keys = keys
+
         return id_dict
 
     def select_folder(self):
