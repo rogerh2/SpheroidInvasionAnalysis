@@ -95,6 +95,7 @@ class ImageBinarizationApp:
         self.draw_check = None
         self.popup = None
         self.continue_button = None
+        self.recent_threshold = self.local_threshold  # Initialize with the default local threshold
 
     def resize_image_canvas(self, event):
         # Calculate the new size while maintaining the aspect ratio
@@ -104,6 +105,7 @@ class ImageBinarizationApp:
     def load_image(self, image_path):
         # Load and display the image
         self.current_image = BinarizedImage(image_path, self.save_folder_path)
+        self.update_threshold(self.recent_threshold)  # Apply the most recent threshold
 
     def save_binarized_image(self):
         self.current_image.save_binarized_image()
@@ -111,6 +113,7 @@ class ImageBinarizationApp:
     def update_threshold(self, val):
         # Update the global threshold
         threshold_value = int(val)
+        self.recent_threshold = threshold_value
         self.current_image.update_mask(threshold_value)
         self.update_canvas()
 
@@ -196,6 +199,10 @@ class ImageBinarizationApp:
         self.load_image(os.path.join(self.image_folder_path, self.image_list[self.image_index]))
         self.update_canvas()
 
+        # Bring the modify pane to front if it's open
+        if self.modify_pane and self.modify_pane.winfo_exists():
+            self.modify_pane.lift()
+
     def skip_to_image(self, image_number):
         # Skip to a specific image number
         if 0 <= image_number < len(self.image_list):
@@ -205,7 +212,7 @@ class ImageBinarizationApp:
         else:
             messagebox.showinfo("Info", "Invalid image number.")
 
-    def update_canvas(self):
+    def update_canvas(self, *args):
         canvas_w = int(self.zoom_scale * self.left_canvas.winfo_width())
         canvas_h = int(self.zoom_scale * self.left_canvas.winfo_height())
 
@@ -267,8 +274,13 @@ class ImageBinarizationApp:
         self.popup = Toplevel()
         self.popup.title("Folder Selection")
 
-        # TODO make this more descriptive
-        Label(self.popup, text="Please select the folders").pack(padx=10, pady=10)
+        # The centered label
+        Label(self.popup, text="Please select the folders", anchor='center').pack(padx=10, pady=(10, 0))
+
+        # The left-justified label with bullets
+        Label(self.popup, text="1. Load spheroid grayscale images for binarizing\n"
+                               "2. Save binarized images to", anchor='w', justify=LEFT).pack(padx=10, pady=(0, 10),
+                                                                                             fill='x')
 
         Button(self.popup, text="Select Load Folder", command=self.select_load_folder).pack(padx=10, pady=5)
         Button(self.popup, text="Select Save Folder", command=self.select_save_folder).pack(padx=10, pady=5)
@@ -280,6 +292,11 @@ class ImageBinarizationApp:
 
     def open_folder_dialog(self, folder_type):
         folder_selected = filedialog.askdirectory()
+
+        # Check that a folder has been selected
+        if not folder_selected:
+            return  # Skip the rest of the code if no folder is selected
+
         if folder_type == "load":
             self.image_folder_path = folder_selected
             self.image_list = [f for f in os.listdir(self.image_folder_path) if f.endswith('.tif')]
@@ -428,29 +445,44 @@ class ImageBinarizationApp:
         self.master.deiconify()
 
     def open_modify_pane(self):
+        # Bring the modify pane to front if it's open
+        if self.modify_pane and self.modify_pane.winfo_exists():
+            self.modify_pane.lift()
+            return
+
         # Create the modify pane as a Toplevel window
+        # TODO add instructions on a pane to the right of the sliders and buttons
         self.modify_pane = Toplevel(self.binarize_window)
         self.modify_pane.title("Modifications")
         self.modify_pane.protocol("WM_DELETE_WINDOW", self.on_close_modify_pane)  # Handle the close event
 
         # Local Threshold Slider
+        # TODO add explenation that this slider sets a local threshold after the user draws a local boundary
+        # TODO have the slider call the local theshold and update plot as its moved so the user can see what's happening
+        # TODO add a variable that stores the local threshold before the slider is used to back out the change if the user does not hit apply
         self.local_thresh_scale = Scale(self.modify_pane, from_=0, to_=255, orient=HORIZONTAL, label="Local Threshold")
         self.local_thresh_scale.pack(fill='x')
 
         # Blur Slider
-        self.blur_scale = Scale(self.modify_pane, from_=1, to_=11, resolution=2, orient=HORIZONTAL, label="Blur")
+        # TODO add explenation that this slider sets a guassian blur on the image that is only used for drawing the automatic boundary
+        self.blur_scale = Scale(self.modify_pane, from_=1, to_=11, resolution=2, orient=HORIZONTAL, label="Blur", command=self.update_canvas)
         self.blur_scale.pack(fill='x')
 
-        # Change Boundary Checkbox to Button
+        # Boundary toggle button
+        # TODO add explenation that this button draws automatic boundaries. There will be one green boundary around the
+        #  main body and red boundaries around all smaller boundaries, if apply is hit when the boundary is drawn all
+        #  red segments will be removed
         self.boundary_var = IntVar()
         self.boundary_button = Button(self.modify_pane, text="Toggle Boundary", command=self.toggle_boundary)
         self.boundary_button.pack()
 
         # Apply Button
-        self.apply_button = Button(self.modify_pane, text="Apply", command=self.apply_modifications)
+        # TODO add explenation that this button automatically applies the local theshold
+        self.apply_button = Button(self.modify_pane, text="Apply Local Threshold", command=self.apply_modifications)
         self.apply_button.pack()
 
         # Draw Checkbox
+        # TODO add explenation that when this is checked clicking and dragging on the image will draw a local boundary instead of panning
         self.draw_var = IntVar()
         self.draw_check = Checkbutton(self.modify_pane, text="Draw", variable=self.draw_var)
         self.draw_check.pack()
