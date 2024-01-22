@@ -95,7 +95,32 @@ class ImageBinarizationApp:
         self.draw_check = None
         self.popup = None
         self.continue_button = None
+        self.set_scale_loc_only = False
+
         self.recent_threshold = self.local_threshold  # Initialize with the default local threshold
+        self.image_states = []
+        self.threshold_states = []
+        self.current_state_index = -1
+
+    def save_state(self):
+        # Save the current binary array as a state
+        self.image_states = self.image_states[:self.current_state_index + 1]  # Truncate the redo history
+        self.threshold_states = self.threshold_states[:self.current_state_index + 1]
+
+        self.image_states.append(np.copy(self.current_image.binary_array))
+        self.threshold_states.append(np.copy(self.recent_threshold))
+        self.current_state_index += 1
+
+    def restore_state(self, state_index):
+        # Restore a saved state
+        if 0 <= state_index < len(self.image_states):
+            self.points = []
+            self.set_scale_loc_only = True
+            self.recent_threshold = self.threshold_states[state_index]
+            self.local_thresh_scale.set(np.copy(self.recent_threshold))
+            self.current_image.binary_array = np.copy(self.image_states[state_index])
+            self.update_canvas()
+            self.current_state_index = state_index
 
     def resize_image_canvas(self, event):
         # Calculate the new size while maintaining the aspect ratio
@@ -107,15 +132,32 @@ class ImageBinarizationApp:
         self.current_image = BinarizedImage(image_path, self.save_folder_path)
         self.update_threshold(self.recent_threshold)  # Apply the most recent threshold
 
+        # Save the initial image and reset the image state history
+        self.image_states = []
+        self.current_state_index = -1
+        self.save_state()
+
     def save_binarized_image(self):
         self.current_image.save_binarized_image()
 
     def update_threshold(self, val):
-        # Update the global threshold
         threshold_value = int(val)
-        self.recent_threshold = threshold_value
-        self.current_image.update_mask(threshold_value)
-        self.update_canvas()
+
+        if self.set_scale_loc_only:
+            self.set_scale_loc_only = False
+            return
+
+        # Check if there are enough points to define a boundary, if so update local threshold, otherwise update global
+        if len(self.points) > 2:
+            # Apply the local threshold to the selected area
+            self.current_image.update_mask(threshold_value, boundary=self.points)
+            self.update_canvas()
+
+        else:
+            # Update the global threshold
+            self.local_threshold = threshold_value
+            self.current_image.update_mask(threshold_value)
+            self.update_canvas()
 
     def start_drawing(self, event):
         # Get the width and height of the right canvas
@@ -134,8 +176,6 @@ class ImageBinarizationApp:
     def stop_drawing(self, event):
         # Stop drawing
         self.drawing = False
-        # Update the state of the Local Threshold slider
-        self.update_local_threshold_slider()
 
     def add_point(self, event):
         # Calculate the relative position of the mouse to the image
@@ -162,17 +202,6 @@ class ImageBinarizationApp:
         # Continue adding points while drawing
         if self.drawing:
             self.add_point(event)
-
-    def apply_local_threshold(self):
-        # Check if there are enough points to define a boundary
-        if len(self.points) > 2:
-            # Apply the local threshold to the selected area
-            self.current_image.update_mask(self.local_threshold, boundary=self.points)
-            self.update_canvas()
-            # Clear the points after applying the local threshold
-            self.points = []
-        else:
-            messagebox.showinfo("Info", "Please draw a boundary on the image to apply a local threshold.")
 
     def delete_region(self):
         # Check if there are enough points to define a boundary
@@ -360,11 +389,6 @@ class ImageBinarizationApp:
         # Bind the mouse movement to draw continuously
         self.right_canvas.bind("<B1-Motion>", self.on_mouse_move)
 
-        # Create and pack the threshold slider
-        self.threshold_scale = Scale(self.binarize_window, from_=0, to_=255, orient=HORIZONTAL, command=self.update_threshold)
-        self.threshold_scale.set(int(self.local_threshold))  # Set the default position of the slider
-        self.threshold_scale.pack(fill='x')
-
         # Add buttons for local thresholding, deleting regions, navigation, and saving
         button_frame = Frame(self.binarize_window)
         button_frame.pack(side='bottom', fill='x')
@@ -407,7 +431,6 @@ class ImageBinarizationApp:
         # Reset all variables associated with the binarize window to their default values
         self.left_canvas = None
         self.right_canvas = None
-        self.threshold_scale = None
         self.zoom_in_button = None
         self.zoom_out_button = None
         self.image_frame = None
@@ -451,44 +474,72 @@ class ImageBinarizationApp:
             return
 
         # Create the modify pane as a Toplevel window
-        # TODO add instructions on a pane to the right of the sliders and buttons
         self.modify_pane = Toplevel(self.binarize_window)
         self.modify_pane.title("Modifications")
         self.modify_pane.protocol("WM_DELETE_WINDOW", self.on_close_modify_pane)  # Handle the close event
 
+        # Instructions Pane
+        Label(self.modify_pane, text="Instructions:\n- Use sliders to adjust thresholds and blur.\n"
+                                     "- Toggle boundary for automatic contour detection.\n"
+                                     "- Apply to confirm changes.", justify=LEFT).pack(side='right', fill='y')
+
         # Local Threshold Slider
-        # TODO add explenation that this slider sets a local threshold after the user draws a local boundary
-        # TODO have the slider call the local theshold and update plot as its moved so the user can see what's happening
-        # TODO add a variable that stores the local threshold before the slider is used to back out the change if the user does not hit apply
-        self.local_thresh_scale = Scale(self.modify_pane, from_=0, to_=255, orient=HORIZONTAL, label="Local Threshold")
+        Label(self.modify_pane, text="Set a threshold either globally or within a boundary").pack()
+        self.local_thresh_scale = Scale(self.modify_pane, from_=0, to_=255, orient=HORIZONTAL,
+                                     command=self.update_threshold, label="Threshold")
+        self.local_thresh_scale.bind("<ButtonRelease-1>", self.on_threshold_slide_end)
+        self.local_thresh_scale.set(int(self.recent_threshold))
         self.local_thresh_scale.pack(fill='x')
 
         # Blur Slider
-        # TODO add explenation that this slider sets a guassian blur on the image that is only used for drawing the automatic boundary
-        self.blur_scale = Scale(self.modify_pane, from_=1, to_=11, resolution=2, orient=HORIZONTAL, label="Blur", command=self.update_canvas)
+        Label(self.modify_pane, text="Set a Gaussian blur for automatic boundary detection.").pack()
+        self.blur_scale = Scale(self.modify_pane, from_=1, to_=11, resolution=2, orient=HORIZONTAL,
+                                label="Blur", command=self.update_canvas)
         self.blur_scale.pack(fill='x')
 
-        # Boundary toggle button
-        # TODO add explenation that this button draws automatic boundaries. There will be one green boundary around the
-        #  main body and red boundaries around all smaller boundaries, if apply is hit when the boundary is drawn all
-        #  red segments will be removed
+        # Boundary Toggle Button
+        Label(self.modify_pane, text="Toggle to draw automatic boundaries.").pack()
         self.boundary_var = IntVar()
-        self.boundary_button = Button(self.modify_pane, text="Toggle Boundary", command=self.toggle_boundary)
+        self.boundary_button = Button(self.modify_pane, text="Auto-Detect Boundary", command=self.toggle_boundary)
         self.boundary_button.pack()
 
         # Apply Button
-        # TODO add explenation that this button automatically applies the local theshold
-        self.apply_button = Button(self.modify_pane, text="Apply Local Threshold", command=self.apply_modifications)
+        Label(self.modify_pane, text="Apply local threshold or boundary changes.").pack()
+        self.apply_button = Button(self.modify_pane, text="Auto Clean", command=self.apply_modifications)
         self.apply_button.pack()
 
-        # Draw Checkbox
-        # TODO add explenation that when this is checked clicking and dragging on the image will draw a local boundary instead of panning
+        # Draw Checkbo
+        Label(self.modify_pane, text="Enable drawing mode for local boundary.").pack()
         self.draw_var = IntVar()
         self.draw_check = Checkbutton(self.modify_pane, text="Draw", variable=self.draw_var)
         self.draw_check.pack()
 
-        # Update the state of the Local Threshold slider based on the points
-        self.update_local_threshold_slider()
+        # Add buttons to undo and redo changes
+        self.undo_button = Button(self.modify_pane, text="Undo", command=self.undo_action)
+        self.undo_button.pack()
+        self.redo_button = Button(self.modify_pane, text="Redo", command=self.redo_action)
+        self.redo_button.pack()
+
+    def on_threshold_slide_end(self, *args):
+        # Clear the points after applying the local threshold
+        if len(self.points) <= 2:
+            self.recent_threshold = self.local_threshold
+        else:
+            self.set_scale_loc_only = True
+            self.local_thresh_scale.set(self.recent_threshold)
+
+        self.points = []
+
+        # Save the new image state
+        self.save_state()
+
+    def undo_action(self):
+        if self.current_state_index > 0:
+            self.restore_state(self.current_state_index - 1)
+
+    def redo_action(self):
+        if self.current_state_index < len(self.image_states) - 1:
+            self.restore_state(self.current_state_index + 1)
 
     def toggle_boundary(self):
         self.boundary_var.set(not self.boundary_var.get())
@@ -508,18 +559,10 @@ class ImageBinarizationApp:
         self.draw_check = None
         self.apply_button = None
         self.draw_var = None
-
-    def update_local_threshold_slider(self):
-        if len(self.points) > 0:
-            self.local_thresh_scale.config(state="normal")
-        else:
-            self.local_thresh_scale.config(state="disabled")
+        self.threshold_scale = None
+        self.set_scale_loc_only = False
 
     def apply_modifications(self):
-        # Apply the local_threshold
-        if len(self.points) > 0:
-            self.local_threshold = self.local_thresh_scale.get()
-            self.apply_local_threshold()
 
         # Apply a local threshold of 256 to all contours except the largest
         if self.current_image.contours and self.boundary_var.get():
@@ -527,6 +570,9 @@ class ImageBinarizationApp:
             for contour in self.current_image.contours[1:]:
                 cv2.fillPoly(mask, [contour], 1)
             self.current_image.binary_array[mask.astype(bool)] = 0
+
+        # Save the new image state
+        self.save_state()
 
         # Update the canvas with potential modifications
         self.update_canvas()
