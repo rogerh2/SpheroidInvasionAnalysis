@@ -75,8 +75,7 @@ class ImageBinarizationApp:
         self.left_canvas = None
         self.right_canvas = None
         self.threshold_scale = None
-        self.zoom_in_button = None
-        self.zoom_out_button = None
+        self.reset_view_button = None
 
         self.drawing = False
         self.image_frame = None
@@ -136,6 +135,9 @@ class ImageBinarizationApp:
         # Load and display the image
         self.current_image = BinarizedImage(image_path, self.save_folder_path)
         self.update_threshold(self.recent_threshold)  # Apply the most recent threshold
+
+        # Reset to the default view when loading an image
+        self.reset_view()
 
         # Save the initial image and reset the image state history
         self.image_states = []
@@ -369,6 +371,24 @@ class ImageBinarizationApp:
         self.continue_button = None
         self.master.deiconify()
 
+    def reset_view(self):
+        # Zoom and pan settings
+        self.zoom_scale = 1
+        self.pan_start_x = 0
+        self.pan_start_y = 0
+
+        # Initialize pan offsets
+        self.pan_offset_x = 0
+        self.pan_offset_y = 0
+
+        # Reposition the canvas view to the top-left corner
+        self.right_canvas.xview_moveto(0)
+        self.right_canvas.yview_moveto(0)
+        self.left_canvas.xview_moveto(0)
+        self.left_canvas.yview_moveto(0)
+
+        self.update_canvas()
+
     def open_binarize_window(self):
         if self.popup:
             self.popup.destroy()  # Destroy the popup pane window
@@ -405,6 +425,9 @@ class ImageBinarizationApp:
         # Bind the mouse movement to draw continuously
         self.right_canvas.bind("<B1-Motion>", self.on_mouse_move)
 
+        # Bind the scroll wheel event to zoom
+        self.right_canvas.bind("<MouseWheel>", self.update_zoom)  # For Windows and Linux
+
         # Add buttons for local thresholding, deleting regions, navigation, and saving
         button_frame = Frame(self.binarize_window)
         button_frame.pack(side='bottom', fill='x')
@@ -414,11 +437,8 @@ class ImageBinarizationApp:
         modify_frame.pack(side='right', fill='y')
 
         # Zoom In and Zoom Out buttons
-        self.zoom_in_button = Button(self.image_frame, text="Zoom In", command=lambda: self.update_zoom(1.25))
-        self.zoom_in_button.pack(side='left')
-
-        self.zoom_out_button = Button(self.image_frame, text="Zoom Out", command=lambda: self.update_zoom(0.8))
-        self.zoom_out_button.pack(side='left')
+        self.reset_view_button = Button(self.image_frame, text="Reset View", command=self.reset_view)
+        self.reset_view_button.pack(side='left')
 
         # Modify button
         self.modify_button = Button(modify_frame, text="Modify", command=self.open_modify_pane)
@@ -447,8 +467,7 @@ class ImageBinarizationApp:
         # Reset all variables associated with the binarize window to their default values
         self.left_canvas = None
         self.right_canvas = None
-        self.zoom_in_button = None
-        self.zoom_out_button = None
+        self.reset_view_button = None
         self.image_frame = None
 
         # Reset drawing-related variables
@@ -466,10 +485,7 @@ class ImageBinarizationApp:
         self.pan_start_y = 0
         self.pan_offset_x = 0
         self.pan_offset_y = 0
-
-        # Zoom In and Zoom Out buttons
-        self.zoom_in_button = None
-        self.zoom_out_button = None
+        self.reset_view_button = None
 
         # Modify button
         self.modify_button = None
@@ -616,19 +632,25 @@ class ImageBinarizationApp:
             if not self.draw_var.get():  # Only pan if not in draw mode
                 dx = event.x - self.pan_start_x
                 dy = event.y - self.pan_start_y
-                self.left_canvas.scan_dragto(dx + self.pan_offset_x, dy + self.pan_offset_y, gain=1)
-                self.right_canvas.scan_dragto(dx + self.pan_offset_x, dy + self.pan_offset_y, gain=1)
+
+                # Cast dx and dy to integers before passing them to scan_dragto
+                self.left_canvas.scan_dragto(int(dx + self.pan_offset_x), int(dy + self.pan_offset_y), gain=1)
+                self.right_canvas.scan_dragto(int(dx + self.pan_offset_x), int(dy + self.pan_offset_y), gain=1)
                 # self.pan_start_x, self.pan_start_y = event.x, event.y
         else:
             dx = event.x - self.pan_start_x
             dy = event.y - self.pan_start_y
 
-            self.left_canvas.scan_dragto(dx + self.pan_offset_x, dy + self.pan_offset_y, gain=1)
-            self.right_canvas.scan_dragto(dx + self.pan_offset_x, dy + self.pan_offset_y, gain=1)
+            self.left_canvas.scan_dragto(int(dx + self.pan_offset_x), int(dy + self.pan_offset_y), gain=1)
+            self.right_canvas.scan_dragto(int(dx + self.pan_offset_x), int(dy + self.pan_offset_y), gain=1)
             # self.pan_start_x, self.pan_start_y = event.x, event.y
 
-    def update_zoom(self, zoom_factor):
+    def update_zoom(self, event):
+        zoom_factor = 1.25 if event.delta > 0 else 0.8  # Zoom in for scroll up, out for scroll down
+
+        # Update the zoom scale
         self.zoom_scale *= zoom_factor
+        self.zoom_scale = np.clip(self.zoom_scale, 0.2, 5)
         self.update_canvas()
 
 
