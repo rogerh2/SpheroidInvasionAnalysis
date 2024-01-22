@@ -1,6 +1,6 @@
 # Importing required modules for GUI and image processing
 from tkinter import Canvas, Toplevel, Checkbutton, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
-    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED
+    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox
 from PIL import Image, ImageTk
 import numpy as np
 import cv2
@@ -16,8 +16,11 @@ class MainMenu:
 
     def __init__(self, master):
         self.master = master
+        self.summary_file_list = []
+
         self.binarize_ap = ImageBinarizationApp(master)
         self.analyze_ap = SpheroidAnalysisApp(master)
+        self.concat_ap = CSVConcatenatorApp(master)
 
         master.title('Image Binarization App')
 
@@ -32,8 +35,14 @@ class MainMenu:
         self.process_button = Button(self.frame, text="Analyize", command=self.analyze_ap.open_analyze_window)
         self.process_button.pack()  # You will need to adjust the positioning according to your layout
 
+        self.process_button = Button(self.frame, text="Consolidate", command=self.open_concat_window)
+        self.process_button.pack()  # You will need to adjust the positioning according to your layout
+
         # Bind the resize event
         self.master.bind('<Configure>', self.binarize_ap.resize_image_canvas)
+
+    def open_concat_window(self):
+        self.concat_ap.open_consolidate_window(self.analyze_ap.summary_files)
 
 
 # Define the GUI class
@@ -106,15 +115,6 @@ class ImageBinarizationApp:
         self.threshold_states = []
         self.current_state_index = -1
 
-    def save_state(self):
-        # Save the current binary array as a state
-        self.image_states = self.image_states[:self.current_state_index + 1]  # Truncate the redo history
-        self.threshold_states = self.threshold_states[:self.current_state_index + 1]
-
-        self.image_states.append(np.copy(self.current_image.binary_array))
-        self.threshold_states.append(np.copy(self.recent_threshold))
-        self.current_state_index += 1
-
     def restore_state(self, state_index):
         # Restore a saved state
         if 0 <= state_index < len(self.image_states):
@@ -126,10 +126,13 @@ class ImageBinarizationApp:
             self.update_canvas()
             self.current_state_index = state_index
 
-    def resize_image_canvas(self, event):
-        # Calculate the new size while maintaining the aspect ratio
-        if self.current_image and self.binarize_window.winfo_exists():
-            self.update_canvas()
+    def undo_action(self):
+        if self.current_state_index > 0:
+            self.restore_state(self.current_state_index - 1)
+
+    def redo_action(self):
+        if self.current_state_index < len(self.image_states) - 1:
+            self.restore_state(self.current_state_index + 1)
 
     def load_image(self, image_path):
         # Load and display the image
@@ -143,6 +146,15 @@ class ImageBinarizationApp:
         self.image_states = []
         self.current_state_index = -1
         self.save_state()
+
+    def save_state(self):
+        # Save the current binary array as a state
+        self.image_states = self.image_states[:self.current_state_index + 1]  # Truncate the redo history
+        self.threshold_states = self.threshold_states[:self.current_state_index + 1]
+
+        self.image_states.append(np.copy(self.current_image.binary_array))
+        self.threshold_states.append(np.copy(self.recent_threshold))
+        self.current_state_index += 1
 
     def save_binarized_image(self):
         self.current_image.save_binarized_image()
@@ -258,6 +270,11 @@ class ImageBinarizationApp:
             self.update_canvas()
         else:
             messagebox.showinfo("Info", "Invalid image number.")
+
+    def resize_image_canvas(self, event):
+        # Calculate the new size while maintaining the aspect ratio
+        if self.current_image and self.binarize_window.winfo_exists():
+            self.update_canvas()
 
     def update_canvas(self, *args):
         canvas_w = int(self.zoom_scale * self.left_canvas.winfo_width())
@@ -565,14 +582,6 @@ class ImageBinarizationApp:
         # Save the new image state
         self.save_state()
 
-    def undo_action(self):
-        if self.current_state_index > 0:
-            self.restore_state(self.current_state_index - 1)
-
-    def redo_action(self):
-        if self.current_state_index < len(self.image_states) - 1:
-            self.restore_state(self.current_state_index + 1)
-
     def toggle_boundary(self):
         self.boundary_var.set(not self.boundary_var.get())
         # Update the canvas with potential modifications
@@ -696,6 +705,7 @@ class SpheroidAnalysisApp:
         self.run_button = None
         self.selected_folder = ""
         self.id_dict_entries = []
+        self.summary_files = []
         self.id_dict_keys = ['experiment #']
 
     def open_analyze_window(self):
@@ -809,13 +819,106 @@ class SpheroidAnalysisApp:
         # Schedule progress bar update in the main thread
         progress_update = lambda p: self.analyze_window.after(0, self.update_progress_bar, p)
 
-        analysis_logic(data_fldr, master_id_dict, progress_update)
+        summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update)
+        self.summary_files.append(summary_file_path)
 
         # Complete the progress bar
         self.analyze_window.after(0, self.update_progress_bar, 100)
 
     def update_progress_bar(self, value):
         self.progress['value'] = value
+
+
+class CSVConcatenatorApp:
+    max_file_print_len = 100
+
+    def __init__(self, root):
+        self.root = root
+        self.file_paths = []
+
+        # Create the binarize window
+        self.consolidate_window = None
+
+        # Create a listbox to display file paths
+        self.listbox = None
+
+        # Create and place buttons
+        self.select_button = None
+        self.concatenate_button = None
+
+
+    def open_consolidate_window(self, init_file_paths):
+        # Hide the main window
+        self.root.withdraw()
+
+        # Create the binarize window
+        self.consolidate_window = Toplevel()
+        self.consolidate_window.title("Consildate data")
+        self.consolidate_window.protocol("WM_DELETE_WINDOW", self.on_close_consolidate_window)  # Handle the close event
+
+        self.file_paths = init_file_paths
+
+        # Create a listbox to display file paths
+        self.listbox = Listbox(self.consolidate_window, width=50, height=10)
+        self.listbox.pack()
+
+        self.update_initial_file_paths()
+        # Create and place buttons
+        self.select_button = Button(self.consolidate_window, text="Select CSV Files", command=self.select_files)
+        self.select_button.pack()
+
+        self.concatenate_button = Button(self.consolidate_window, text="Concatenate Files", command=self.concatenate_files)
+        self.concatenate_button.pack()
+
+    def on_close_consolidate_window(self):
+
+        if self.consolidate_window:
+            self.consolidate_window.destroy()  # Destroy the analysis window
+            self.consolidate_window = None  # Reset the window variable
+
+        # Reset all components to None
+        self.consolidate_window = None
+        self.listbox = None
+        self.select_button = None
+        self.concatenate_button = None
+
+        self.root.deiconify()
+
+    def update_initial_file_paths(self):
+        for file_path in self.file_paths:
+            display_text = '...' + file_path[-self.max_file_print_len:] if len(
+                file_path) > self.max_file_print_len else file_path
+            self.listbox.insert(END, display_text)
+
+    def select_files(self):
+        new_file_paths = filedialog.askopenfilenames(filetypes=[("CSV Files", "*.csv")])
+        for file_path in new_file_paths:
+            self.file_paths.append(file_path)
+            display_text = '...' + file_path[-self.max_file_print_len:] if len(
+                file_path) > self.max_file_print_len else file_path
+            self.listbox.insert(END, display_text)
+
+    def concatenate_files(self):
+        if not self.file_paths:
+            print("No files selected to concatenate.")
+            return
+
+        try:
+            # Read and concatenate all selected CSV files
+            dfs = [pd.read_csv(file) for file in self.file_paths]
+            concatenated_df = pd.concat(dfs, ignore_index=True)
+
+            # Save the concatenated DataFrame as a new CSV file
+            save_path = filedialog.asksaveasfilename(defaultextension=".csv",
+                                                     filetypes=[("CSV Files", "*.csv")])
+            if save_path:
+                concatenated_df.to_csv(save_path, index=False)
+                print(f"Concatenated CSV saved as {save_path}")
+            else:
+                print("Save operation cancelled.")
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
 
 def main():

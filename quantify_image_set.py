@@ -839,4 +839,6 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun):
         speed_angle_dataframe.to_csv(os.path.join(data_fldr, save_prefix + '_speeds_and_angles.csv'), index=False)
 
     # Save the overall summary dataframe to CSV at the end of the outermost loop
-    overall_summary_dataframe.to_csv(os.path.join(data_fldr, 'overall_summary.csv'), index=False)
+    overall_summary_path = os.path.join(data_fldr, 'overall_summary.csv')
+    overall_summary_dataframe.to_csv(overall_summary_path, index=False)
+    return overall_summary_path
