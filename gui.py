@@ -59,6 +59,7 @@ class ImageBinarizationApp:
         self.local_threshold = 36
         # Member variable to store the points for local threshold or deletion
         self.points = []
+        self.oval_ids = []
 
         # Zoom and pan settings
         self.zoom_scale = 1
@@ -97,6 +98,10 @@ class ImageBinarizationApp:
         self.continue_button = None
         self.set_scale_loc_only = False
 
+        # In update_canvas method
+        self.left_image_id = None
+        self.right_image_id = None
+
         self.recent_threshold = self.local_threshold  # Initialize with the default local threshold
         self.image_states = []
         self.threshold_states = []
@@ -114,7 +119,7 @@ class ImageBinarizationApp:
     def restore_state(self, state_index):
         # Restore a saved state
         if 0 <= state_index < len(self.image_states):
-            self.points = []
+            self.delete_points()
             self.set_scale_loc_only = True
             self.recent_threshold = self.threshold_states[state_index]
             self.local_thresh_scale.set(np.copy(self.recent_threshold))
@@ -167,7 +172,7 @@ class ImageBinarizationApp:
         # Check if the event happened within the canvas boundaries
         if 0 <= event.x < canvas_width and 0 <= event.y < canvas_height:
             # Clear previous points
-            self.points = []
+            self.delete_points()
             # Start drawing
             self.drawing = True
             # Add the starting point
@@ -183,9 +188,13 @@ class ImageBinarizationApp:
         canvas_height = int(self.zoom_scale * self.right_canvas.winfo_height())
         img_width, img_height = self.current_image.grayscale_array.shape[::-1]
 
+        # Translate window coordinates to canvas coordinates
+        canvas_x = self.right_canvas.canvasx(event.x)
+        canvas_y = self.right_canvas.canvasy(event.y)
+
         # Adjust the event coordinates for pan offset and zoom scale
-        adjusted_x = event.x - self.pan_offset_x
-        adjusted_y = event.y - self.pan_offset_y
+        adjusted_x = canvas_x
+        adjusted_y = canvas_y
 
         # Scale the adjusted coordinates to the image dimensions
         x_scaled = int(adjusted_x * img_width / canvas_width)
@@ -195,13 +204,20 @@ class ImageBinarizationApp:
         self.points.append((x_scaled, y_scaled))
 
         # Visual feedback for the point
-        self.right_canvas.create_oval(adjusted_x - 2, adjusted_y - 2, adjusted_x + 2
+        oval_id = self.right_canvas.create_oval(adjusted_x - 2, adjusted_y - 2, adjusted_x + 2
                                       , adjusted_y + 2, fill='red')
+        self.oval_ids.append(oval_id)  # Append the ID to the list
 
     def draw_boundary(self, event):
         # Continue adding points while drawing
         if self.drawing:
             self.add_point(event)
+
+    def delete_points(self):
+        for oval_id in self.oval_ids:
+            self.right_canvas.delete(oval_id)
+        self.oval_ids = []  # Reset the list after deleting the ovals
+        self.points = []
 
     def delete_region(self):
         # Check if there are enough points to define a boundary
@@ -212,7 +228,7 @@ class ImageBinarizationApp:
             self.current_image.binary_array[mask] = False
             self.update_canvas()
             # Clear the points after deletion
-            self.points = []
+            self.delete_points()
         else:
             messagebox.showinfo("Info", "Please draw a boundary on the image to delete a region.")
 
@@ -256,14 +272,14 @@ class ImageBinarizationApp:
         original_image = Image.fromarray(self.current_image.grayscale_array)
         # Use Image.Resampling.LANCZOS for best downsampling quality
         original_photo = ImageTk.PhotoImage(original_image.resize((canvas_w, canvas_h), Image.Resampling.LANCZOS))
-        self.left_canvas.create_image(0, 0, anchor="nw", image=original_photo)
+        self.left_image_id = self.left_canvas.create_image(0, 0, anchor="nw", image=original_photo)
         self.left_canvas.image = original_photo  # Keep a reference to avoid garbage collection
 
         # Resize the binarized image and update the right canvas
         binarized_image = Image.fromarray((self.current_image.binary_array * 255).astype(np.uint8))
         # Use Image.Resampling.LANCZOS for best downsampling quality
         binarized_photo = ImageTk.PhotoImage(binarized_image.resize((canvas_w, canvas_h), Image.Resampling.LANCZOS))
-        self.right_canvas.create_image(0, 0, anchor="nw", image=binarized_photo)
+        self.right_image_id = self.right_canvas.create_image(0, 0, anchor="nw", image=binarized_photo)
         self.right_canvas.image = binarized_photo  # Keep a reference to avoid garbage collection
 
         # Draw contours if the boundary checkbox is checked
@@ -437,7 +453,7 @@ class ImageBinarizationApp:
 
         # Reset drawing-related variables
         self.drawing = False
-        self.points = []
+        self.delete_points()
 
         # Reset navigation and image-related variables
         self.image_list = []
@@ -528,7 +544,7 @@ class ImageBinarizationApp:
             self.set_scale_loc_only = True
             self.local_thresh_scale.set(self.recent_threshold)
 
-        self.points = []
+        self.delete_points()
 
         # Save the new image state
         self.save_state()
