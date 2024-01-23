@@ -59,24 +59,20 @@ class SpheroidImage:
         # Create meshgrid of coordinates
         self.x_coords, self.y_coords = np.meshgrid(y_range, x_range)
 
-    def center_boundary(self, boundary):
+    def center_boundary(self, boundary, boundary_centroid):
         """
         Centers the input boundary with the spheroid centroid
 
         Args:
             boundary (array-like): The coordinates defining the boundary of the spheroid object.
+            boundary_centroid (array-like): The centroid of the boundary
 
         Returns:
             array: The centered boundary
         """
 
-        # Calculate moments of the binary image for centering the contour
-        M = cv2.moments(boundary)
-        bX = int(M["m10"] / M["m00"])
-        bY = int(M["m01"] / M["m00"])
-
         # Translate the contour to the center of the target image
-        return boundary + self.centroid - np.array([bX, bY])
+        return boundary + self.centroid - boundary_centroid
 
     def get_pixle_coor_outside_boundary(self, boundary):
         """
@@ -331,7 +327,7 @@ class SpheroidImage:
         # Center the x-coordinates of the outer pixels relative to the centroid's x-coordinate
         # Prevent division by zero by ensuring that x-coordinates are not exactly zero
         centered_x_coor = outer_pixels[:, 0] - self.centroid[0]
-        centered_x_coor = np.sign(centered_x_coor) * np.clip(np.abs(centered_x_coor), 1e-8, np.inf)
+        #centered_x_coor = np.sign(centered_x_coor) * np.clip(np.abs(centered_x_coor), 1e-8, np.inf)
 
         # Center the y-coordinates of the outer pixels relative to the centroid's y-coordinate
         centered_y_coor = outer_pixels[:, 1] - self.centroid[1]
@@ -384,8 +380,28 @@ class QuantSpheroidSet:
         Returns:
             tuple: arrays of distances, indices, coordinates, angles, and outer coordinates.
         """
+        # Variables for customization
+        line_thickness = 1  # Thinner lines
+        marker_size = 20  # Smaller markers
+
         # Initial boundary is taken from the first image
         init_bound = self.images[0].boundary.squeeze()
+
+        # Calculate moments of the binary image for centering the contour
+        M = cv2.moments(init_bound)
+        bX = int(M["m10"] / M["m00"])
+        bY = int(M["m01"] / M["m00"])
+        boundary_centroid = np.array([bX, bY])
+
+        # Plot the binarized image and the boundary
+        plt.imshow(self.images[0].img_array, cmap='gray')
+        plt.plot(init_bound[:, 0], init_bound[:, 1], color='green', linewidth=line_thickness)  # Plot boundary in green
+        plt.title('Binarized Image with Initial Boundary')
+
+        plt.figure()
+        plt.imshow(self.images[0].img_array, cmap='gray')
+        plt.scatter(boundary_centroid[0], boundary_centroid[1], color='blue', marker='*', s=marker_size)
+        plt.title('Initial Image with Boundary Centroid')
 
         # Initializing lists to store calculated values
         distances = []
@@ -397,9 +413,97 @@ class QuantSpheroidSet:
 
         # Iterating over images (excluding the first) to calculate metrics
         for img in self.images[1:]:
-            centered_boundary = img.center_boundary(init_bound)
+            centered_boundary = img.center_boundary(init_bound, boundary_centroid)
             dist, inds, coor, boundary_coor = img.intersection_distance(centered_boundary)
             angles = img.get_angles_outside_boundary(centered_boundary)
+
+            plt.figure()
+            plt.imshow(img.img_array, cmap='gray')
+            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=50)
+            plt.title('Initial Image with Boundary Centroid')
+
+            # Plot img.img_array with init_bound and centroids
+            plt.figure()
+            plt.imshow(img.img_array, cmap='gray')
+            plt.plot(init_bound[:, 0], init_bound[:, 1], color='green')
+            plt.scatter(boundary_centroid[0], boundary_centroid[1], color='green', marker='*',
+                        s=50)  # Green star for boundary_centroid
+            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=50)  # Blue star for img.centroid
+            plt.title('Uncentered boundary')
+
+            # Plot img.img_array with centered_boundary
+            plt.figure()
+            plt.imshow(img.img_array, cmap='gray')
+            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
+            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=50)  # Blue star for img.centroid
+            plt.title('Centered boundary')
+
+            # Plot img.img_array with points in coor + img.centroid
+            plt.figure()
+            plt.imshow(img.img_array, cmap='gray')
+            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
+
+            plt.scatter(coor[:, 0] + img.centroid[0], coor[:, 1] + img.centroid[1], marker='.', color='cyan')  # Red points for coor
+            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=50)  # Blue star for img.centroid
+            plt.title('Centered boundary and outer pixels')
+
+            # Plot img.img_array with init_bound and lines between random points
+            plt.figure()
+            plt.imshow(img.img_array, cmap='gray')
+            N = 100
+            random_boundary_sample = np.random.choice(boundary_coor.shape[0], N, replace=False)
+            sample_boundary_coor = boundary_coor[random_boundary_sample, :] + img.centroid
+            sample_coor = coor[random_boundary_sample, :] + img.centroid
+            for p1, p2 in zip(sample_boundary_coor, sample_coor):
+                plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color='blue')  # Blue lines between points
+
+            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
+            plt.axhline(y=img.centroid[1], color='red', linestyle='--')
+            plt.title('Distance from boundary')
+
+            plt.figure()
+            plt.imshow(img.img_array, cmap='gray')
+            for p2 in sample_coor:
+                plt.plot([img.centroid[0], p2[0]], [img.centroid[1], p2[1]], color='blue')  # Blue lines between points
+
+            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
+            plt.axhline(y=img.centroid[1], color='red', linestyle='--')
+            plt.title('Distance from centroid')
+
+            plt.figure()
+            plt.imshow(img.img_array, cmap='gray')
+            # Retrieve the current index from the slider
+            inds = np.random.choice(angles.shape[0], 5, replace=False)
+
+            # Update the angle and point based on the new index
+            angle_rad = angles[inds]
+            pix_pt = coor[inds] + img.centroid
+
+            # Create lable angles that removes the inverted y axis from imshow
+            angles_rad_for_lables = np.arctan2(-coor[inds, 1], coor[inds, 0])
+
+            # Calculate the distances from the centroid
+            length = np.sqrt(np.sum((pix_pt - img.centroid)**2, axis=1))
+
+            # Calculate the new end point of the line
+            point_locs = np.stack([img.centroid[0] + length * np.cos(angle_rad)
+                                     , img.centroid[1] + length * np.sin(angle_rad)], axis=1)
+
+            for p in point_locs:
+                plt.plot([img.centroid[0], p[0]], [img.centroid[1], p[1]])  # Blue lines between points
+
+            # Using a second loop to ensure the legend only lables the lines
+            for p in pix_pt:
+                plt.scatter(p[0], p[1], color='red', marker='*')
+
+            plt.axhline(y=img.centroid[1], color='red', linestyle='--')
+            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
+
+            angle_deg = (np.rad2deg(angles_rad_for_lables).astype(int) + 360) % 360
+            labels = [f'{a}°' for a in angle_deg]
+            plt.legend(labels, loc='upper right')
+            plt.title('Angles of migration')
+            plt.show()
 
             # Uncomment to test find distance to boundary
             # # Set up the figure and axis for the image and the slider
@@ -442,6 +546,7 @@ class QuantSpheroidSet:
             #     # Update the angle and point based on the new index
             #     angle_rad = angles[ind]
             #     pix_pt = coor[ind]
+            #     length = np.sqrt(np.sum(pix_pt**2))
             #
             #     # Calculate the new end point of the line
             #     end_x = center[0] + length * np.cos(angle_rad)
@@ -492,7 +597,7 @@ class QuantSpheroidSet:
             #
             # # Show the plot with the slider
             # plt.show()
-
+            #
             distances.append(dist)
             indices.append(inds)
             coordinates.append(coor)
