@@ -11,6 +11,7 @@ from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider
 from sklearn.decomposition import PCA
 from constants import *
+from matplotlib.backends.backend_pdf import PdfPages
 
 
 ARIAL = {'fontname': 'Arial',
@@ -365,6 +366,8 @@ class QuantSpheroidSet:
 
         # Loading images as SpheroidImage objects
         self.images = [SpheroidImage(fpath) for fpath in self.paths]
+        self.line_width = 1
+        self.marker_size = 20
 
         # If no explicit save path save in the same directory as the images
         if save_path is None:
@@ -372,7 +375,7 @@ class QuantSpheroidSet:
         else:
             self.save_fldr_path = save_path
 
-    def distances_outside_initial_boundary(self):
+    def distances_outside_initial_boundary(self, save_fldr):
         """
         Calculate distances to the pixels outside the initial boundary for each image in the
         set, excluding the first image.
@@ -380,9 +383,9 @@ class QuantSpheroidSet:
         Returns:
             tuple: arrays of distances, indices, coordinates, angles, and outer coordinates.
         """
-        # Variables for customization
-        line_thickness = 1  # Thinner lines
-        marker_size = 20  # Smaller markers
+
+        # Create a PDF file for saving the plots
+        pdf_pages = PdfPages(os.path.join(save_fldr, 'intermediary_plots.pdf'))
 
         # Initial boundary is taken from the first image
         init_bound = self.images[0].boundary.squeeze()
@@ -395,13 +398,16 @@ class QuantSpheroidSet:
 
         # Plot the binarized image and the boundary
         plt.imshow(self.images[0].img_array, cmap='gray')
-        plt.plot(init_bound[:, 0], init_bound[:, 1], color='green', linewidth=line_thickness)  # Plot boundary in green
+        plt.plot(init_bound[:, 0], init_bound[:, 1], color='limegreen',
+                 linewidth=self.line_width)  # Plot boundary in green
         plt.title('Binarized Image with Initial Boundary')
+        pdf_pages.savefig()
 
         plt.figure()
         plt.imshow(self.images[0].img_array, cmap='gray')
-        plt.scatter(boundary_centroid[0], boundary_centroid[1], color='blue', marker='*', s=marker_size)
+        plt.scatter(boundary_centroid[0], boundary_centroid[1], color='blue', marker='*', s=self.marker_size)
         plt.title('Initial Image with Boundary Centroid')
+        pdf_pages.savefig()
 
         # Initializing lists to store calculated values
         distances = []
@@ -412,198 +418,119 @@ class QuantSpheroidSet:
         times = []
 
         # Iterating over images (excluding the first) to calculate metrics
-        for img in self.images[1:]:
+        for i, img in enumerate(self.images[1:], start=1):
             centered_boundary = img.center_boundary(init_bound, boundary_centroid)
             dist, inds, coor, boundary_coor = img.intersection_distance(centered_boundary)
             angles = img.get_angles_outside_boundary(centered_boundary)
 
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
-            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=50)
-            plt.title('Initial Image with Boundary Centroid')
+            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=self.marker_size)
+            plt.title(f'T{i}: Initial Image with Boundary Centroid')
+            pdf_pages.savefig()
 
             # Plot img.img_array with init_bound and centroids
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
-            plt.plot(init_bound[:, 0], init_bound[:, 1], color='green')
-            plt.scatter(boundary_centroid[0], boundary_centroid[1], color='green', marker='*',
-                        s=50)  # Green star for boundary_centroid
-            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=50)  # Blue star for img.centroid
-            plt.title('Uncentered boundary')
+            plt.plot(init_bound[:, 0], init_bound[:, 1], color='limegreen', linewidth=self.line_width)
+            plt.scatter(boundary_centroid[0], boundary_centroid[1], color='limegreen', marker='*',
+                        s=self.marker_size)  # Green star for boundary_centroid
+            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*',
+                        s=self.marker_size)  # Blue star for img.centroid
+            plt.title(f'T{i}: Uncentered boundary')
+            pdf_pages.savefig()
 
             # Plot img.img_array with centered_boundary
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
-            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
-            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=50)  # Blue star for img.centroid
-            plt.title('Centered boundary')
+            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='limegreen', linewidth=self.line_width)
+            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*',
+                        s=self.marker_size)  # Blue star for img.centroid
+            plt.title(f'T{i}: Centered boundary')
+            pdf_pages.savefig()
 
             # Plot img.img_array with points in coor + img.centroid
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
-            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
 
-            plt.scatter(coor[:, 0] + img.centroid[0], coor[:, 1] + img.centroid[1], marker='.', color='cyan')  # Red points for coor
-            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=50)  # Blue star for img.centroid
-            plt.title('Centered boundary and outer pixels')
+            plt.scatter(coor[:, 0] + img.centroid[0], coor[:, 1] + img.centroid[1], marker='.', color='cyan',
+                        s=self.marker_size)  # Red points for coor
+            plt.scatter(img.centroid[0], img.centroid[1], color='limegreen', marker='*',
+                        s=self.marker_size)  # Blue star for img.centroid
+            plt.title(f'T{i}: Centered boundary and outer pixels')
+            pdf_pages.savefig()
 
             # Plot img.img_array with init_bound and lines between random points
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
-            N = 100
+            N = 300
             random_boundary_sample = np.random.choice(boundary_coor.shape[0], N, replace=False)
             sample_boundary_coor = boundary_coor[random_boundary_sample, :] + img.centroid
             sample_coor = coor[random_boundary_sample, :] + img.centroid
             for p1, p2 in zip(sample_boundary_coor, sample_coor):
-                plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color='blue')  # Blue lines between points
+                plt.plot([p1[0], p2[0]], [p1[1], p2[1]], color='cyan',
+                         linewidth=self.line_width)  # Blue lines between points
 
-            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
-            plt.axhline(y=img.centroid[1], color='red', linestyle='--')
-            plt.title('Distance from boundary')
+            plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*',
+                        s=self.marker_size)  # Blue star for img.centroid
+            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='blue', linewidth=self.line_width)
+            plt.axhline(y=img.centroid[1], color='gray', linestyle='--')
+            plt.title(f'T{i}: Distance from boundary')
+            pdf_pages.savefig()
 
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
             for p2 in sample_coor:
-                plt.plot([img.centroid[0], p2[0]], [img.centroid[1], p2[1]], color='blue')  # Blue lines between points
+                plt.plot([img.centroid[0], p2[0]], [img.centroid[1], p2[1]], color='blue',
+                         linewidth=self.line_width)  # Blue lines between points
 
-            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
-            plt.axhline(y=img.centroid[1], color='red', linestyle='--')
-            plt.title('Distance from centroid')
+            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='limegreen', linewidth=self.line_width)
+            plt.axhline(y=img.centroid[1], color='gray', linestyle='--')
+
+            plt.scatter(img.centroid[0], img.centroid[1], color='limegreen', marker='*',
+                        s=self.marker_size, zorder=N + 10)  # Green star for img.centroid
+            plt.title(f'T{i}: Distance from centroid')
+            pdf_pages.savefig()
 
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
-            # Retrieve the current index from the slider
+
+            # Generate random indices to plot angles at
             inds = np.random.choice(angles.shape[0], 5, replace=False)
 
             # Update the angle and point based on the new index
             angle_rad = angles[inds]
             pix_pt = coor[inds] + img.centroid
 
-            # Create lable angles that removes the inverted y axis from imshow
-            angles_rad_for_lables = np.arctan2(-coor[inds, 1], coor[inds, 0])
+            # Create label angles that remove the inverted y-axis from imshow
+            angles_rad_for_labels = np.arctan2(-coor[inds, 1], coor[inds, 0])
 
             # Calculate the distances from the centroid
-            length = np.sqrt(np.sum((pix_pt - img.centroid)**2, axis=1))
+            length = np.sqrt(np.sum((pix_pt - img.centroid) ** 2, axis=1))
 
             # Calculate the new end point of the line
-            point_locs = np.stack([img.centroid[0] + length * np.cos(angle_rad)
-                                     , img.centroid[1] + length * np.sin(angle_rad)], axis=1)
+            point_locs = np.stack([img.centroid[0] + length * np.cos(angle_rad),
+                                   img.centroid[1] + length * np.sin(angle_rad)], axis=1)
 
             for p in point_locs:
-                plt.plot([img.centroid[0], p[0]], [img.centroid[1], p[1]])  # Blue lines between points
+                plt.plot([img.centroid[0], p[0]], [img.centroid[1], p[1]],
+                         linewidth=self.line_width)  # Blue lines between points
 
-            # Using a second loop to ensure the legend only lables the lines
+            # Using a second loop to ensure the legend only labels the lines
             for p in pix_pt:
-                plt.scatter(p[0], p[1], color='red', marker='*')
+                plt.scatter(p[0], p[1], color='red', marker='*', s=self.marker_size)
 
             plt.axhline(y=img.centroid[1], color='red', linestyle='--')
-            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='green')
+            plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='limegreen', linewidth=self.line_width)
 
-            angle_deg = (np.rad2deg(angles_rad_for_lables).astype(int) + 360) % 360
-            labels = [f'{a}°' for a in angle_deg]
+            angle_deg = (np.rad2deg(angles_rad_for_labels).astype(int) + 360) % 360
+            labels = [f'T{i}: {a}°' for a in angle_deg]
             plt.legend(labels, loc='upper right')
-            plt.title('Angles of migration')
-            plt.show()
+            plt.title(f'T{i}: Angles of migration')
+            pdf_pages.savefig()
 
-            # Uncomment to test find distance to boundary
-            # # Set up the figure and axis for the image and the slider
-            # fig, ax = plt.subplots()
-            # plt.subplots_adjust(bottom=0.25)  # Adjust subplot to make room for the slider
-            #
-            # # Initial plot setup
-            # ax.imshow(img.img_array)
-            # x_coords = centered_boundary[:, 0]
-            # y_coords = centered_boundary[:, 1]
-            # line, = ax.plot(x_coords, y_coords, 'r-', linewidth=2)  # Initial boundary line
-            # point_bx, = ax.plot(x_coords[0], y_coords[0], 'bx')  # Initial blue x
-            # point_rx, = ax.plot(coor[0, 0] + img.centroid[0], coor[0, 1] + img.centroid[1], 'r.')  # Initial red x
-            #
-            # # Slider setup
-            # ax_slider = plt.axes([0.25, 0.1, 0.65, 0.03])  # Slider position and size
-            # slider = Slider(ax_slider, 'Index', 0, len(x_coords) - 1, valinit=0, valfmt='%0.0f')
-            #
-            # # Update function to redraw the plot when the slider is changed
-            # def update(val):
-            #     ind = int(slider.val)
-            #
-            #     current_pixles = coor[inds == ind]
-            #
-            #     point_bx.set_data(x_coords[ind], y_coords[ind])
-            #     point_rx.set_data(current_pixles[::, 0] + img.centroid[0], current_pixles[::, 1] + img.centroid[1])
-            #     fig.canvas.draw_idle()
-            #
-            # # Call update function when slider value is changed
-            # slider.on_changed(update)
-            #
-            # # Display the interactive plot
-            # plt.show()
-
-            # Uncomment to test find angles to boundary
-            # def update(val):
-            #     # Retrieve the current index from the slider
-            #     ind = int(slider.val)
-            #
-            #     # Update the angle and point based on the new index
-            #     angle_rad = angles[ind]
-            #     pix_pt = coor[ind]
-            #     length = np.sqrt(np.sum(pix_pt**2))
-            #
-            #     # Calculate the new end point of the line
-            #     end_x = center[0] + length * np.cos(angle_rad)
-            #     end_y = center[1] + length * np.sin(angle_rad)
-            #
-            #     # Calculate the new end point of the line
-            #     start_x = center[0]# - length * np.cos(angle_rad)
-            #     start_y = center[1]# - length * np.sin(angle_rad)
-            #
-            #     # Update the line and point on the plot
-            #     line.set_xdata([start_x, end_x])
-            #     line.set_ydata([start_y, end_y])
-            #     point_rx.set_data(pix_pt[0] + center[0], pix_pt[1] + center[1])
-            #
-            #     # Redraw the figure
-            #     fig.canvas.draw_idle()
-            #
-            # # Initial setup (this part is mostly from your original code)
-            # center = img.centroid
-            # length = 5000
-            # ind = 10000  # This will be replaced by the slider value
-            #
-            # # Set up the figure and axis for the image and the slider
-            # fig, ax = plt.subplots()
-            # plt.subplots_adjust(bottom=0.25)  # Adjust subplot to make room for the slider
-            #
-            # # Initial plot setup
-            # ax.imshow(img.img_array)
-            # x_coords = centered_boundary[:, 0]
-            # y_coords = centered_boundary[:, 1]
-            # line, = ax.plot([], [], 'r-')  # Initial boundary line (empty for now)
-            # xlim = plt.xlim()
-            # ylim = plt.ylim()
-            # point_rx, = ax.plot([], [], 'bx')  # Initial red x (empty for now)
-            #
-            # # Add a grid for better visualization
-            # plt.grid(True)
-            #
-            # # Create the slider
-            # ax_slider = plt.axes([0.25, 0.1, 0.65, 0.03])  # Position the slider
-            # slider = Slider(ax_slider, 'Index', 0, len(coor) - 1, valinit=ind, valstep=1)
-            #
-            # # Call the update function when the slider value is changed
-            # slider.on_changed(update)
-            #
-            # # Initialize the plot with the initial index
-            # update(ind)
-            #
-            # # Show the plot with the slider
-            # plt.show()
-            #
-            distances.append(dist)
-            indices.append(inds)
-            coordinates.append(coor)
-            outer_coordinates.append(coor - boundary_coor)
-            angles_ls.append(angles)
-            times.append(img)
+        # Close the PDF file
+        pdf_pages.close()
 
         # Convert lists to numpy arrays
         distances = np.asarray(distances)
@@ -828,7 +755,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun):
             os.makedirs(save_fldr_path)
 
         image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment)
-        distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary()
+        distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary(save_fldr_path)
 
         A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
 
