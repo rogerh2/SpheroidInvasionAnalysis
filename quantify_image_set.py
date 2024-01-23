@@ -11,6 +11,7 @@ from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider
 from sklearn.decomposition import PCA
 from constants import *
+from queue import Queue
 from matplotlib.backends.backend_pdf import PdfPages
 
 
@@ -784,7 +785,7 @@ def quantify_progress_print(progress):
         print(f'Quantifying data {progress}% complete')
 
 
-def analysis_logic(data_fldr, master_id_dict, progress_print_fun, save_images_to_pdf=False):
+def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Queue, save_images_to_pdf=False):
     """
     Loops through spheroid images and saves the relevant data for further analysis. Groups spheroids by their prefix
     number and characterizes them based on the time points in the file name expressed as <time unit>T.
@@ -793,6 +794,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, save_images_to
         data_fldr (str): The file path where the images are stored and the data will be saved
         master_id_dict (dict): Dictionary containing meta data for this set of spheroid images
         progress_print_fun (callable): A function to display the analysis progress
+        kill_queue (queue.Queue): A queue to send a kill signal to end the analysis early if desired
     """
 
     print('Analysis started')
@@ -814,6 +816,13 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, save_images_to
 
         # Update progress bar
         progress = 100 * i / len(image_fpaths)
+
+        # Kill the program early if a kill signal is sent
+        if not kill_queue.empty():
+            kill_queue.get()
+            print('early stop')
+            return
+
         progress_print_fun(progress)
 
         _, img_ext = os.path.splitext(fname)
@@ -878,6 +887,12 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, save_images_to
         speed_angle_columns_data = []
 
         for j in range(0, len(image_set_for_this_experiment.images) - 1):
+            # Kill the program early if a kill signal is sent
+            if not kill_queue.empty():
+                kill_queue.get()
+                print('early stop')
+                return
+
             img, t = image_set_for_this_experiment.images[j + 1], image_set_for_this_experiment.times[j + 1]
 
             distances = distances[j]
@@ -972,4 +987,4 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, save_images_to
 
 if __name__ == "__main__":
     analysis_logic(r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt18 images to quantify\3D static\masked'
-                   , {'experiment #': 18, 'condition': 'static'}, quantify_progress_print)
+                   , {'experiment #': 18, 'condition': 'static'}, quantify_progress_print, Queue())

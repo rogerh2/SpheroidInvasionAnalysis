@@ -2,6 +2,7 @@
 from tkinter import Canvas, Toplevel, Checkbutton, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
     , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox, BooleanVar
 from PIL import Image, ImageTk
+from queue import Queue
 import numpy as np
 import cv2
 import os
@@ -45,7 +46,8 @@ class MainMenu:
         self.instructions_label = Label(self.frame, text="Workflow Instructions:\n\n"
                                                          "1. Open 'Binarize' to binarize and modify images if desired.\n"
                                                          "2. Open 'Analyze' to calculate metrics.\n"
-                                                         "3. Use 'Consolidate' to concatenate all the data csv files.",
+                                                         "3. Use 'Consolidate' to concatenate all the data csv files.\n\n"
+                                                         "To return to the main window from a sub window close the subwindow with the x",
                                         justify='left')  # Justify text to the left for better readability
         self.instructions_label.pack()  # Pack the instructions label into the frame
 
@@ -712,6 +714,7 @@ class SpheroidAnalysisApp:
         self.progress = None
         self.run_button = None
         self.save_to_pdf_checkbox = None
+        self.kill_queue = Queue()
         self.selected_folder = ""
         self.id_dict_entries = []
         self.summary_files = []
@@ -720,6 +723,9 @@ class SpheroidAnalysisApp:
     def open_analyze_window(self):
         # Hide the main window
         self.root.withdraw()
+
+        if not self.kill_queue.empty():
+            self.kill_queue.get()
 
         # Create the binarize window
         self.analyze_window = Toplevel()
@@ -763,6 +769,9 @@ class SpheroidAnalysisApp:
         if self.analyze_window:
             self.analyze_window.destroy()  # Destroy the analysis window
             self.analyze_window = None  # Reset the window variable
+
+        if self.kill_queue.empty():
+            self.kill_queue.put(True)
 
         # Reset all components to None
         self.folder_label = None
@@ -836,15 +845,17 @@ class SpheroidAnalysisApp:
         master_id_dict = self.build_id_dict()
 
         # Schedule progress bar update in the main thread
-        progress_update = lambda p: self.analyze_window.after(0, self.update_progress_bar, p)
+        def progress_update(p):
+            if self.analyze_window: self.analyze_window.after(0, self.update_progress_bar, p)
 
         # Update this line in the analysis_logic method
         save_to_pdf = self.save_to_pdf_var.get()
-        summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, save_to_pdf)
+        summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, save_images_to_pdf=save_to_pdf)
         self.summary_files.append(summary_file_path)
 
         # Complete the progress bar
-        self.analyze_window.after(0, self.update_progress_bar, 100)
+        if self.analyze_window:
+            self.analyze_window.after(0, self.update_progress_bar, 100)
 
     def update_progress_bar(self, value):
         self.progress['value'] = value
