@@ -32,7 +32,7 @@ class MainMenu:
         self.binarize_button = Button(self.frame, text="Binarize", command=self.binarize_ap.open_folder_selection_popup)
         self.binarize_button.pack()  # You will need to adjust the positioning according to your layout
 
-        self.process_button = Button(self.frame, text="Analyize", command=self.analyze_ap.open_analyze_window)
+        self.process_button = Button(self.frame, text="Analyze", command=self.analyze_ap.open_analyze_window)
         self.process_button.pack()  # You will need to adjust the positioning according to your layout
 
         self.process_button = Button(self.frame, text="Consolidate", command=self.open_concat_window)
@@ -41,8 +41,16 @@ class MainMenu:
         # Bind the resize event
         self.master.bind('<Configure>', self.binarize_ap.resize_image_canvas)
 
+        # Create an instruction label
+        self.instructions_label = Label(self.frame, text="Workflow Instructions:\n\n"
+                                                         "1. Open 'Binarize' to binarize and modify images if desired.\n"
+                                                         "2. Open 'Analyze' to calculate metrics.\n"
+                                                         "3. Use 'Consolidate' to concatenate all the data csv files.",
+                                        justify='left')  # Justify text to the left for better readability
+        self.instructions_label.pack()  # Pack the instructions label into the frame
+
     def open_concat_window(self):
-        self.concat_ap.open_consolidate_window(self.analyze_ap.summary_files)
+            self.concat_ap.open_consolidate_window(self.analyze_ap.summary_files)
 
 
 # Define the GUI class
@@ -528,9 +536,9 @@ class ImageBinarizationApp:
         self.modify_pane.protocol("WM_DELETE_WINDOW", self.on_close_modify_pane)  # Handle the close event
 
         # Instructions Pane
-        Label(self.modify_pane, text="Instructions:\n- Use sliders to adjust thresholds and blur.\n"
-                                     "- Toggle boundary for automatic contour detection.\n"
-                                     "- Apply to confirm changes.", justify=LEFT).pack(side='right', fill='y')
+        Label(self.modify_pane, text="Instructions:\n- Use threshold slider to adjust binarization threshold.\nIf a boundary is drawn this only adjusts the threshold within the boundary\n\n"
+                                     "- Toggle boundary for automatic contour detection, use blur to adjust the auto boundary resolution.\n\n"
+                                     "- Auto clean to remove pixels not in the largest boundary found by auto boundary.", justify=LEFT).pack(side='right', fill='y')
 
         # Local Threshold Slider
         Label(self.modify_pane, text="Set a threshold either globally or within a boundary").pack()
@@ -553,7 +561,7 @@ class ImageBinarizationApp:
         self.boundary_button.pack()
 
         # Apply Button
-        Label(self.modify_pane, text="Apply local threshold or boundary changes.").pack()
+        Label(self.modify_pane, text="Automatically remove pixels outside the largest boundary.").pack()
         self.apply_button = Button(self.modify_pane, text="Auto Clean", command=self.apply_modifications)
         self.apply_button.pack()
 
@@ -724,24 +732,28 @@ class SpheroidAnalysisApp:
         self.folder_button = Button(self.analyze_window, text="Browse", command=self.select_folder)
         self.folder_button.grid(row=0, column=1)
 
+        # Label for optional metadata
+        self.metadata_label = Label(self.analyze_window, text="Enter Optional Metadata:")
+        self.metadata_label.grid(row=1, column=0, columnspan=2, sticky='w')
+
         # ID dictionary table
         self.id_dict_frame = Frame(self.analyze_window)
-        self.id_dict_frame.grid(row=1, column=0, columnspan=2)
+        self.id_dict_frame.grid(row=2, column=0, columnspan=2)
         self.id_dict_entries = []
         self.create_id_dict_ui()
 
         # Progress bar
         self.progress = ttk.Progressbar(self.analyze_window, orient=HORIZONTAL, length=300, mode='determinate')
-        self.progress.grid(row=2, column=0, columnspan=2, sticky='we')
+        self.progress.grid(row=3, column=0, columnspan=2, sticky='we')
 
         # Run button
         self.run_button = Button(self.analyze_window, text="Run Analysis", command=self.run_analysis)
-        self.run_button.grid(row=3, column=0, columnspan=2)
+        self.run_button.grid(row=4, column=0, columnspan=2)
 
         # Checkbox for saving to PDF
         self.save_to_pdf_var = BooleanVar()
         self.save_to_pdf_checkbox = Checkbutton(self.analyze_window, text='Save to PDF', variable=self.save_to_pdf_var)
-        self.save_to_pdf_checkbox.grid(row=4, column=0, columnspan=2)
+        self.save_to_pdf_checkbox.grid(row=5, column=0, columnspan=2)
 
 
     def on_close_analyze_window(self):
