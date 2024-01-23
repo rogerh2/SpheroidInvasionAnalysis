@@ -1,6 +1,6 @@
 # Importing required modules for GUI and image processing
 from tkinter import Canvas, Toplevel, Checkbutton, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
-    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox
+    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox, BooleanVar
 from PIL import Image, ImageTk
 import numpy as np
 import cv2
@@ -703,6 +703,7 @@ class SpheroidAnalysisApp:
         self.id_dict_frame = None
         self.progress = None
         self.run_button = None
+        self.save_to_pdf_checkbox = None
         self.selected_folder = ""
         self.id_dict_entries = []
         self.summary_files = []
@@ -737,6 +738,11 @@ class SpheroidAnalysisApp:
         self.run_button = Button(self.analyze_window, text="Run Analysis", command=self.run_analysis)
         self.run_button.grid(row=3, column=0, columnspan=2)
 
+        # Checkbox for saving to PDF
+        self.save_to_pdf_var = BooleanVar()
+        self.save_to_pdf_checkbox = Checkbutton(self.analyze_window, text='Save to PDF', variable=self.save_to_pdf_var)
+        self.save_to_pdf_checkbox.grid(row=4, column=0, columnspan=2)
+
 
     def on_close_analyze_window(self):
         # Destroy and reset UI components to None
@@ -753,6 +759,7 @@ class SpheroidAnalysisApp:
         self.id_dict_frame = None
         self.progress = None
         self.run_button = None
+        self.save_to_pdf_checkbox = None
 
         self.root.deiconify()
 
@@ -819,7 +826,9 @@ class SpheroidAnalysisApp:
         # Schedule progress bar update in the main thread
         progress_update = lambda p: self.analyze_window.after(0, self.update_progress_bar, p)
 
-        summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update)
+        # Update this line in the analysis_logic method
+        save_to_pdf = self.save_to_pdf_var.get()
+        summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, save_to_pdf)
         self.summary_files.append(summary_file_path)
 
         # Complete the progress bar

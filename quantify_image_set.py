@@ -198,7 +198,7 @@ class SpheroidImage:
 
         return distance_magnitude, close_inds, outer_pixels_full - self.centroid, boundary_pixels_full
 
-    def pca(self, save_fldr_path, angles, speeds, t):
+    def pca(self, save_fldr_path, angles, speeds, t, save_images_to_pdf):
         """
         Perform Principal Component Analysis (PCA) on velocity data and generate plots.
         This function takes velocity data in terms of angles and speeds, applies PCA to transform the data,
@@ -210,10 +210,15 @@ class SpheroidImage:
             angles (array): The angular components of the velocity data.
             speeds (array): The speed components of the velocity data.
             t (int/float): A time parameter used in the calculation of distances and moments.
+            save_images_to_pdf (bool): A boolean determining whether to save data as images in a folder or inside a pdf
 
         Returns:
             tuple: Contains principal angles, speeds, speed difference, and moments of inertia.
         """
+
+        if save_images_to_pdf:
+            # Create a PDF file for saving the plots
+            pdf_pages = PdfPages(os.path.join(save_fldr_path, 'pca_plots.pdf'))
 
         # Convert polar coordinates (angle, speed) to Cartesian coordinates (x, y)
         velocities = speeds[::, np.newaxis] * np.stack((np.cos(angles), np.sin(angles)), axis=1)
@@ -267,7 +272,10 @@ class SpheroidImage:
         ax.plot(a3, s3, "k")
         ax.plot(a4, s4, "k")
         ax.set_rlim(rmin=0)
-        plt.savefig(os.path.join(save_fldr_path, f't{t}_speed_vs_angle_with_principle_components.png'))
+        if save_images_to_pdf:
+            pdf_pages.savefig()
+        else:
+            plt.savefig(os.path.join(save_fldr_path, f't{t}_speed_vs_angle_with_principle_components.png'))
         plt.close()
 
         # Plot transformed data
@@ -287,7 +295,10 @@ class SpheroidImage:
         ax.plot(a4, s4, "b")
         ax.plot(a5, s5, "k")
         ax.plot(a6, s6, "k")
-        plt.savefig(os.path.join(save_fldr_path, f't{t}_principle_coordinates_speed_vs_angle.png'))
+        if save_images_to_pdf:
+            pdf_pages.savefig()
+        else:
+            plt.savefig(os.path.join(save_fldr_path, f't{t}_principle_coordinates_speed_vs_angle.png'))
         plt.close()
 
         # Calculate the difference between principal speeds
@@ -304,6 +315,10 @@ class SpheroidImage:
         principle_Irb = np.sum(transformed_outerdistance_lengths ** 2 * a)
         principle_Ixb = np.sum(transformed_outerdistances_xy[:, 1] ** 2 * a)
         principle_Iyb = np.sum(transformed_outerdistances_xy[:, 0] ** 2 * a)
+
+        # Close the PDF file
+        if save_images_to_pdf:
+            pdf_pages.close()
 
         # Return the calculated principal angles, speeds, speed difference, and moments of inertia
         return principle_angles[0], principle_angles[1], principle_speeds[0], principle_speeds[
@@ -375,17 +390,22 @@ class QuantSpheroidSet:
         else:
             self.save_fldr_path = save_path
 
-    def distances_outside_initial_boundary(self, save_fldr):
+    def distances_outside_initial_boundary(self, save_fldr, save_images_to_pdf):
         """
         Calculate distances to the pixels outside the initial boundary for each image in the
         set, excluding the first image.
+
+        Args:
+            save_fldr (str): The file path where the plots will be saved.
+            save_images_to_pdf (bool): A boolean determining whether to save data as images in a folder or inside a pdf
 
         Returns:
             tuple: arrays of distances, indices, coordinates, angles, and outer coordinates.
         """
 
-        # Create a PDF file for saving the plots
-        pdf_pages = PdfPages(os.path.join(save_fldr, 'intermediary_plots.pdf'))
+        if save_images_to_pdf:
+            # Create a PDF file for saving the plots
+            pdf_pages = PdfPages(os.path.join(save_fldr, 'intermediary_plots.pdf'))
 
         # Initial boundary is taken from the first image
         init_bound = self.images[0].boundary.squeeze()
@@ -401,13 +421,21 @@ class QuantSpheroidSet:
         plt.plot(init_bound[:, 0], init_bound[:, 1], color='limegreen',
                  linewidth=self.line_width)  # Plot boundary in green
         plt.title('Binarized Image with Initial Boundary')
-        pdf_pages.savefig()
+
+        if save_images_to_pdf:
+            pdf_pages.savefig()
+        else:
+            plt.savefig(os.path.join(save_fldr, f'binarized_with_boundary.png'))
 
         plt.figure()
         plt.imshow(self.images[0].img_array, cmap='gray')
         plt.scatter(boundary_centroid[0], boundary_centroid[1], color='blue', marker='*', s=self.marker_size)
         plt.title('Initial Image with Boundary Centroid')
-        pdf_pages.savefig()
+
+        if save_images_to_pdf:
+            pdf_pages.savefig()
+        else:
+            plt.savefig(os.path.join(save_fldr, f'binarized_with_centroid.png'))
 
         # Initializing lists to store calculated values
         distances = []
@@ -426,8 +454,13 @@ class QuantSpheroidSet:
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
             plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=self.marker_size)
-            plt.title(f'T{i}: Initial Image with Boundary Centroid')
-            pdf_pages.savefig()
+            plt.title(f'T{i}: Boundary Centroid')
+
+            if save_images_to_pdf:
+                pdf_pages.savefig()
+            else:
+                plt.savefig(os.path.join(save_fldr, f'T{i}_binarized_with_boundary.png'))
+            plt.close()
 
             # Plot img.img_array with init_bound and centroids
             plt.figure()
@@ -438,7 +471,11 @@ class QuantSpheroidSet:
             plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*',
                         s=self.marker_size)  # Blue star for img.centroid
             plt.title(f'T{i}: Uncentered boundary')
-            pdf_pages.savefig()
+            if save_images_to_pdf:
+                pdf_pages.savefig()
+            else:
+                plt.savefig(os.path.join(save_fldr, f'T{i}_uncentered_boundary.png'))
+            plt.close()
 
             # Plot img.img_array with centered_boundary
             plt.figure()
@@ -447,7 +484,11 @@ class QuantSpheroidSet:
             plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*',
                         s=self.marker_size)  # Blue star for img.centroid
             plt.title(f'T{i}: Centered boundary')
-            pdf_pages.savefig()
+            if save_images_to_pdf:
+                pdf_pages.savefig()
+            else:
+                plt.savefig(os.path.join(save_fldr, f'T{i}_centered_boundary.png'))
+            plt.close()
 
             # Plot img.img_array with points in coor + img.centroid
             plt.figure()
@@ -458,7 +499,11 @@ class QuantSpheroidSet:
             plt.scatter(img.centroid[0], img.centroid[1], color='limegreen', marker='*',
                         s=self.marker_size)  # Blue star for img.centroid
             plt.title(f'T{i}: Centered boundary and outer pixels')
-            pdf_pages.savefig()
+            if save_images_to_pdf:
+                pdf_pages.savefig()
+            else:
+                plt.savefig(os.path.join(save_fldr, f'T{i}_centered_boundary_outer_pixels.png'))
+            plt.close()
 
             # Plot img.img_array with init_bound and lines between random points
             plt.figure()
@@ -476,7 +521,11 @@ class QuantSpheroidSet:
             plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='blue', linewidth=self.line_width)
             plt.axhline(y=img.centroid[1], color='gray', linestyle='--')
             plt.title(f'T{i}: Distance from boundary')
-            pdf_pages.savefig()
+            if save_images_to_pdf:
+                pdf_pages.savefig()
+            else:
+                plt.savefig(os.path.join(save_fldr, f'T{i}_distance_from_boundary.png'))
+            plt.close()
 
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
@@ -490,7 +539,11 @@ class QuantSpheroidSet:
             plt.scatter(img.centroid[0], img.centroid[1], color='limegreen', marker='*',
                         s=self.marker_size, zorder=N + 10)  # Green star for img.centroid
             plt.title(f'T{i}: Distance from centroid')
-            pdf_pages.savefig()
+            if save_images_to_pdf:
+                pdf_pages.savefig()
+            else:
+                plt.savefig(os.path.join(save_fldr, f'T{i}_distance_from_centroid.png'))
+            plt.close()
 
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
@@ -527,10 +580,22 @@ class QuantSpheroidSet:
             labels = [f'T{i}: {a}°' for a in angle_deg]
             plt.legend(labels, loc='upper right')
             plt.title(f'T{i}: Angles of migration')
-            pdf_pages.savefig()
+            if save_images_to_pdf:
+                pdf_pages.savefig()
+            else:
+                plt.savefig(os.path.join(save_fldr, f'T{i}_angles_of_migration.png'))
+            plt.close()
+
+            distances.append(dist)
+            indices.append(inds)
+            coordinates.append(coor)
+            outer_coordinates.append(coor - boundary_coor)
+            angles_ls.append(angles)
+            times.append(img)
 
         # Close the PDF file
-        pdf_pages.close()
+        if save_images_to_pdf:
+            pdf_pages.close()
 
         # Convert lists to numpy arrays
         distances = np.asarray(distances)
@@ -543,7 +608,7 @@ class QuantSpheroidSet:
 
 
 def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles_array, outer_distances_xy, centerdistance_lengths,
-                                    full_distances_xy, num_days, pixel_size):
+                                    full_distances_xy, num_days, pixel_size, save_images_to_pdf):
     """
     Plots distance histograms, cumulative distance histograms, angles histograms, representative distance
     values, and speed vs angle graphs. It also calculates and plots the moment of inertia from the boundary and center
@@ -559,12 +624,17 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
         full_distances_xy (array): XY coordinates of pixels relative to the center.
         num_days (int): Number of days over which the data is collected.
         pixel_size (float): The size of a pixel in meters.
+        save_images_to_pdf (bool): A boolean determining whether to save data as images in a folder or inside a pdf
 
     Returns:
         tuple: A tuple containing moments of inertia from the boundary (Irb, Ixb, Iyb),
                moments of inertia from the center (Irc, Ixc, Iyc), the arrays of outerdistance lengths, outer distances xy,
                centerdistance lengths, full distances xy, speed array, and speed array converted to distance units.
     """
+
+    if save_images_to_pdf:
+        # Create a PDF file for saving the plots
+        pdf_pages = PdfPages(os.path.join(save_fldr_path, 'data_plots.pdf'))
 
     plt.figure()
 
@@ -585,7 +655,10 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     plt.ylabel('frequency', **ARIAL)
 
     plt.tight_layout()  # Adjust subplots to fit into figure area.
-    plt.savefig(os.path.join(save_fldr_path, f't{t}_distances_histogram.png'))  # Save the figure
+    if save_images_to_pdf:
+        pdf_pages.savefig()
+    else:
+        plt.savefig(os.path.join(save_fldr_path, f't{t}_distances_histogram.png'))  # Save the figure
     plt.close()
 
     # Assuming 'angles' is a list of numpy arrays or lists
@@ -596,7 +669,10 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     ax = plt.subplot(111, polar=True)  # Create a polar subplot
     ax.hist(angles_array, bins=20)  # Polar histogram with 20 bins
     plt.title('Angles histogram', **ARIAL)
-    plt.savefig(os.path.join(save_fldr_path, f't{t}_angles_histogram.png'))
+    if save_images_to_pdf:
+        pdf_pages.savefig()
+    else:
+        plt.savefig(os.path.join(save_fldr_path, f't{t}_angles_histogram.png'))
     plt.close()
 
     max_dist = np.max(outerdistance_lengths)
@@ -618,14 +694,20 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
         plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{int(np.ceil(value))}',
                  ha='center', va='bottom')
 
-    plt.savefig(os.path.join(save_fldr_path, f't{t}_representative_distances.png'))
+    if save_images_to_pdf:
+        pdf_pages.savefig()
+    else:
+        plt.savefig(os.path.join(save_fldr_path, f't{t}_representative_distances.png'))
     plt.close()
 
     plt.figure()
     ax1 = plt.subplot(111, polar=True)
     ax1.plot(angles_array, centerdistance_lengths, '.')
     plt.title("Distances from center (pixels) vs angle")
-    plt.savefig(os.path.join(save_fldr_path, f't{t}_distances_vs_angle_center.png'))
+    if save_images_to_pdf:
+        pdf_pages.savefig()
+    else:
+        plt.savefig(os.path.join(save_fldr_path, f't{t}_distances_vs_angle_center.png'))
     plt.close()
 
     # Plot the boundary distance vs angle values in a polar plot
@@ -633,7 +715,10 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     ax2 = plt.subplot(111, polar=True)
     ax2.plot(angles_array, outerdistance_lengths, '.')
     plt.title("Distances from boundary (pixels) vs angle")
-    plt.savefig(os.path.join(save_fldr_path, f't{t}_distances_vs_angle_boundary.png'))
+    if save_images_to_pdf:
+        pdf_pages.savefig()
+    else:
+        plt.savefig(os.path.join(save_fldr_path, f't{t}_distances_vs_angle_boundary.png'))
     plt.close()
 
     # Convert distances to meters and calculate speed
@@ -646,7 +731,10 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     ax = plt.subplot(111, polar=True)
     ax.plot(angles_array, speed_array, '.')
     plt.title('Speed vs angle')
-    plt.savefig(os.path.join(save_fldr_path, f't{t}_speed_vs_angle.png'))
+    if save_images_to_pdf:
+        pdf_pages.savefig()
+    else:
+        plt.savefig(os.path.join(save_fldr_path, f't{t}_speed_vs_angle.png'))
     plt.close()
 
     a = 1  # area for calculation - in this case = 1 bc pixels
@@ -674,8 +762,14 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
             plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{value:.2e}',
                      ha='center', va='bottom')
 
-        plt.savefig(os.path.join(save_fldr_path, f't{t}_' + title.replace(' ', '_').lower() + '.png'))
+        if save_images_to_pdf:
+            pdf_pages.savefig()
+        else:
+            plt.savefig(os.path.join(save_fldr_path, f't{t}_' + title.replace(' ', '_').lower() + '.png'))
         plt.close()
+
+    if save_images_to_pdf:
+        pdf_pages.close()
 
     # Plot the moment of inertia from center
     plot_moment_of_inertia('Moment of inertia from center', [Irc, Ixc, Iyc])
@@ -690,7 +784,7 @@ def quantify_progress_print(progress):
         print(f'Quantifying data {progress}% complete')
 
 
-def analysis_logic(data_fldr, master_id_dict, progress_print_fun):
+def analysis_logic(data_fldr, master_id_dict, progress_print_fun, save_images_to_pdf=False):
     """
     Loops through spheroid images and saves the relevant data for further analysis. Groups spheroids by their prefix
     number and characterizes them based on the time points in the file name expressed as <time unit>T.
@@ -755,7 +849,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun):
             os.makedirs(save_fldr_path)
 
         image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment)
-        distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary(save_fldr_path)
+        distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary(save_fldr_path, save_images_to_pdf)
 
         A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
 
@@ -789,7 +883,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun):
             distances = distances[j]
             metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances, angles[j], outer_coordinates[j]
                                                   , np.sqrt(pixles[j, ::, 0] ** 2 + pixles[j, ::, 1] ** 2),
-                                                  pixles[j], 2, 1)
+                                                  pixles[j], 2, 1, save_images_to_pdf)
             Irb, Ixb, Iyb, Irc, Ixc, Iyc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths \
                 , full_distances_xy, speed_array, speed_dimensionalized = metrics
 
@@ -808,7 +902,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun):
             mean_angles.append(np.mean(angles[j, :]))
             median_angles.append(np.median(angles[j, :]))
 
-            pca_metrics = img.pca(save_fldr_path, angles[j], speed_dimensionalized, t)
+            pca_metrics = img.pca(save_fldr_path, angles[j], speed_dimensionalized, t, save_images_to_pdf)
             pa0, pa1, ps0, ps1, prin_speed_difference, principle_Irb, principle_Ixb \
                 , principle_Iyb, transformed_angles, transformed_speeds = pca_metrics
 
