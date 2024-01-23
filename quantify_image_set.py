@@ -197,7 +197,7 @@ class SpheroidImage:
             xb_close = xb[current_close_inds] # N
             yb_close = yb[current_close_inds] # N
             distance_magnitude[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.sqrt((x1 - xb_close) ** 2 + (y1 - yb_close) ** 2)  # shape N
-            boundary_pixels_full[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.stack((xb_close - x0, yb_close - y0), axis=1)
+            boundary_pixels_full[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.stack((xb_close, yb_close), axis=1)
 
         return distance_magnitude, close_inds, outer_pixels_full - self.centroid, boundary_pixels_full
 
@@ -398,7 +398,7 @@ class QuantSpheroidSet:
         # Iterating over images (excluding the first) to calculate metrics
         for img in self.images[1:]:
             centered_boundary = img.center_boundary(init_bound)
-            dist, inds, coor, outer_coor = img.intersection_distance(centered_boundary)
+            dist, inds, coor, boundary_coor = img.intersection_distance(centered_boundary)
             angles = img.get_angles_outside_boundary(centered_boundary)
 
             # Uncomment to test find distance to boundary
@@ -496,7 +496,7 @@ class QuantSpheroidSet:
             distances.append(dist)
             indices.append(inds)
             coordinates.append(coor)
-            outer_coordinates.append(outer_coor)
+            outer_coordinates.append(coor - boundary_coor)
             angles_ls.append(angles)
             times.append(img)
 
@@ -754,9 +754,9 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun):
         for j in range(0, len(image_set_for_this_experiment.images) - 1):
             img, t = image_set_for_this_experiment.images[j + 1], image_set_for_this_experiment.times[j + 1]
 
-            distances = distances[0]
-            metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances, angles[j], outer_coordinates[0]
-                                                  , np.sqrt(pixles[0, ::, 0] ** 2 + pixles[0, ::, 1] ** 2),
+            distances = distances[j]
+            metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances, angles[j], outer_coordinates[j]
+                                                  , np.sqrt(pixles[j, ::, 0] ** 2 + pixles[j, ::, 1] ** 2),
                                                   pixles[j], 2, 1)
             Irb, Ixb, Iyb, Irc, Ixc, Iyc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths \
                 , full_distances_xy, speed_array, speed_dimensionalized = metrics
@@ -842,3 +842,8 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun):
     overall_summary_path = os.path.join(data_fldr, 'overall_summary.csv')
     overall_summary_dataframe.to_csv(overall_summary_path, index=False)
     return overall_summary_path
+
+
+if __name__ == "__main__":
+    analysis_logic(r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt18 images to quantify\3D static\masked'
+                   , {'experiment #': 18, 'condition': 'static'}, quantify_progress_print)
