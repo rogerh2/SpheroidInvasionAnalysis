@@ -360,6 +360,7 @@ class QuantSpheroidSet:
 
     Args:
         image_fpaths (list): A list of file paths for the images.
+        pattern (str): The regular expression that yields the time unit from the file name
         save_path (str, optional): The path where outputs should be saved. If None, uses the
                                    directory of the first image.
 
@@ -370,10 +371,10 @@ class QuantSpheroidSet:
         save_fldr_path (str): Path to the folder where outputs will be saved.
     """
 
-    def __init__(self, image_fpaths, save_path=None):
+    def __init__(self, image_fpaths, pattern, save_path=None):
         # Extracting time information from the image filenames
-        sample_times = np.array([int(re.search(PATTERN, os.path.basename(filename)).group(1))
-                        for filename in image_fpaths if re.search(PATTERN, filename)])
+        sample_times = np.array([int(re.search(pattern, os.path.basename(filename)).group(1))
+                        for filename in image_fpaths if re.search(pattern, filename)])
         array_paths = np.array(image_fpaths)
 
         # Sorting the times and paths based on the extracted times
@@ -784,8 +785,7 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
 def quantify_progress_print(progress):
         print(f'Quantifying data {progress}% complete')
 
-
-def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Queue, save_images_to_pdf=False):
+def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Queue, pattern, save_images_to_pdf=False):
     """
     Loops through spheroid images and saves the relevant data for further analysis. Groups spheroids by their prefix
     number and characterizes them based on the time points in the file name expressed as <time unit>T.
@@ -807,6 +807,9 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
 
         if img_ext in ['.tif', '.png', '.jpg']:
             image_fpaths.append(f)
+
+    if not len(image_fpaths):
+        return
 
     processed_experiments = []
 
@@ -857,7 +860,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
         if not os.path.isdir(save_fldr_path):
             os.makedirs(save_fldr_path)
 
-        image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment)
+        image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment, pattern)
         distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary(save_fldr_path, save_images_to_pdf)
 
         A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
@@ -987,4 +990,4 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
 
 if __name__ == "__main__":
     analysis_logic(r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt18 images to quantify\3D static\masked'
-                   , {'experiment #': 18, 'condition': 'static'}, quantify_progress_print, Queue())
+                   , {'experiment #': 18, 'condition': 'static'}, quantify_progress_print, Queue(), PATTERN)

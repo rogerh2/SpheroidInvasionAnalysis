@@ -1,6 +1,6 @@
 # Importing required modules for GUI and image processing
 from tkinter import Canvas, Toplevel, Checkbutton, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
-    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox, BooleanVar
+    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox, BooleanVar, StringVar
 from PIL import Image, ImageTk
 from queue import Queue
 import numpy as np
@@ -19,40 +19,104 @@ class MainMenu:
         self.master = master
         self.summary_file_list = []
 
+        self.instructions_label = None
+
         self.binarize_ap = ImageBinarizationApp(master)
         self.analyze_ap = SpheroidAnalysisApp(master)
         self.concat_ap = CSVConcatenatorApp(master)
 
         master.title('Image Binarization App')
 
+        # Initialize a variable to track the last width
+        self.last_width = master.winfo_width()
+
         # Main frame
         self.frame = Frame(master)
         self.frame.pack(fill='both', expand=True)
+
+        # Bind the resize event
+        self.master.bind('<Configure>', self.binarize_ap.resize_image_canvas)
 
         # Add Main Menu buttons
         self.binarize_button = Button(self.frame, text="Binarize", command=self.binarize_ap.open_folder_selection_popup)
         self.binarize_button.pack()  # You will need to adjust the positioning according to your layout
 
-        self.process_button = Button(self.frame, text="Analyze", command=self.analyze_ap.open_analyze_window)
+        self.process_button = Button(self.frame, text="Analyze", command=self.run_analysis)
         self.process_button.pack()  # You will need to adjust the positioning according to your layout
 
         self.process_button = Button(self.frame, text="Consolidate", command=self.open_concat_window)
         self.process_button.pack()  # You will need to adjust the positioning according to your layout
 
-        # Bind the resize event
-        self.master.bind('<Configure>', self.binarize_ap.resize_image_canvas)
+        self.time_unit_var = StringVar(value='day')  # StringVar to hold the time unit value
+        Label(self.frame, text="Time Unit:").pack()  # Label for the text box
+        self.time_unit_entry = Entry(self.frame, textvariable=self.time_unit_var)  # Text box for time unit
+        self.time_unit_entry.pack()  # Pack the text box into the frame
 
-        # Create an instruction label
-        self.instructions_label = Label(self.frame, text="Workflow Instructions:\n\n"
-                                                         "1. Open 'Binarize' to binarize and modify images if desired.\n"
-                                                         "2. Open 'Analyze' to calculate metrics.\n"
-                                                         "3. Use 'Consolidate' to concatenate all the data csv files.\n\n"
-                                                         "To return to the main window from a sub window close the subwindow with the x",
-                                        justify='left')  # Justify text to the left for better readability
-        self.instructions_label.pack()  # Pack the instructions label into the frame
+        # Add a Help button
+        self.help_button = Button(self.frame, text="Help", command=self.open_help_window)
+        self.help_button.pack()  # Adjust the positioning according to your layout
+
+    def open_help_window(self):
+        self.help_window = Toplevel(self.master)
+        self.help_window.title("Help")
+
+        self.help_frame = Frame(self.help_window)
+        self.help_frame.pack(fill='both', expand=True)
+
+        self.instructions_label = Label(self.help_frame, text="File Naming Instructions:\n"
+                                "Image file names should begin with an integer number followed"
+                                " by '_'. The number denotes which spheroid an image belongs to."
+                                " So all time points of the same spheroid should share the same"
+                                " prefix number.\n\n"
+                                "Workflow Instructions:\n"
+                                "1. Open 'Binarize' to binarize and modify images if desired.\n"
+                                "2. Open 'Analyze' to calculate metrics.\n"
+                                "3. Use 'Consolidate' to concatenate all the data csv files.\n\n"
+                                "To return to the main window from a sub window close the subwindow with the x",
+              justify='left')
+        self.instructions_label.pack()
+
+        # Bind window resize event to update label wrap
+        # self.update_label_wrap_initial()
+        self.instructions_label.bind('<Configure>', self.update_label_wrap)
+        self.help_window.protocol("WM_DELETE_WINDOW", self.on_close_help_window)  # Handle the close event
+
+
+    def on_close_help_window(self):
+        if self.help_window:
+            self.help_window.destroy()  # Destroy the analysis window
+            self.help_window = None  # Reset the window variable
+
+        self.help_frame = None
+        self.instructions_label = None
+
+
+    # def update_label_wrap_initial(self):
+    #     """ Set initial wrap length based on current frame width. """
+    #     if self.help_frame:
+    #         initial_width = self.help_frame.winfo_width()
+    #         if initial_width > 0:  # Check if the initial width is valid
+    #             self.instructions_label.configure(wraplength=initial_width)
+
+    def update_label_wrap(self, event):
+        """ Update the wraplength of the instructions label based on the window width. """
+        if self.help_frame:
+            new_width = self.help_frame.winfo_width() # Use frame width with padding
+            min_width = 100  # Set a minimum width threshold
+
+            # Only update if new width is greater than the minimum threshold
+            if (new_width > min_width):
+                self.instructions_label.configure(wraplength=new_width)
 
     def open_concat_window(self):
             self.concat_ap.open_consolidate_window(self.analyze_ap.summary_files)
+
+    def run_analysis(self):
+        time_unit = self.time_unit_var.get()  # Retrieve the value from the text box
+        pattern = rf'{time_unit}(\d+)'
+        self.analyze_ap.open_analyze_window(pattern)
+
+
 
 
 # Define the GUI class
@@ -145,9 +209,10 @@ class ImageBinarizationApp:
             self.restore_state(self.current_state_index + 1)
 
     def load_image(self, image_path):
+        # TODO this should not load a new copy of the image, Load all images at the start and store them, navigating
+        #  should open the same image
         # Load and display the image
         self.current_image = BinarizedImage(image_path, self.save_folder_path)
-        self.update_threshold(self.recent_threshold)  # Apply the most recent threshold
 
         # Reset to the default view when loading an image
         self.reset_view()
@@ -167,6 +232,7 @@ class ImageBinarizationApp:
         self.current_state_index += 1
 
     def save_binarized_image(self):
+        # TODO have this save all images
         self.current_image.save_binarized_image()
 
     def update_threshold(self, val):
@@ -238,6 +304,7 @@ class ImageBinarizationApp:
             self.add_point(event)
 
     def delete_points(self):
+        # TODO if right canvas is not defined don't try to delete
         for oval_id in self.oval_ids:
             self.right_canvas.delete(oval_id)
         self.oval_ids = []  # Reset the list after deleting the ovals
@@ -259,7 +326,6 @@ class ImageBinarizationApp:
     def navigate_images(self, direction):
         # Navigate to the next or previous image based on the direction
         if direction == 'next' and self.image_index < len(self.image_list) - 1:
-            self.save_binarized_image()
             self.image_index += 1
         elif direction == 'prev' and self.image_index > 0:
             self.image_index -= 1
@@ -527,6 +593,7 @@ class ImageBinarizationApp:
         self.master.deiconify()
 
     def open_modify_pane(self):
+        # TODO have the modify pane become part of the binarization app window
         # Bring the modify pane to front if it's open
         if self.modify_pane and self.modify_pane.winfo_exists():
             self.modify_pane.lift()
@@ -538,11 +605,13 @@ class ImageBinarizationApp:
         self.modify_pane.protocol("WM_DELETE_WINDOW", self.on_close_modify_pane)  # Handle the close event
 
         # Instructions Pane
+        # TODO make this label a popup that appears when the user preses help
         Label(self.modify_pane, text="Instructions:\n- Use threshold slider to adjust binarization threshold.\nIf a boundary is drawn this only adjusts the threshold within the boundary\n\n"
                                      "- Toggle boundary for automatic contour detection, use blur to adjust the auto boundary resolution.\n\n"
                                      "- Auto clean to remove pixels not in the largest boundary found by auto boundary.", justify=LEFT).pack(side='right', fill='y')
 
         # Local Threshold Slider
+        # TODO this lable should appear when the user hovers over self.local_thresh_scale
         Label(self.modify_pane, text="Set a threshold either globally or within a boundary").pack()
         self.local_thresh_scale = Scale(self.modify_pane, from_=0, to_=255, orient=HORIZONTAL,
                                      command=self.update_threshold, label="Threshold")
@@ -551,23 +620,27 @@ class ImageBinarizationApp:
         self.local_thresh_scale.pack(fill='x')
 
         # Blur Slider
+        # TODO this lable should appear when the user hovers over self.blur_scale
         Label(self.modify_pane, text="Set a Gaussian blur for automatic boundary detection.").pack()
         self.blur_scale = Scale(self.modify_pane, from_=1, to_=11, resolution=2, orient=HORIZONTAL,
                                 label="Blur", command=self.update_canvas)
         self.blur_scale.pack(fill='x')
 
         # Boundary Toggle Button
+        # TODO this lable should appear when the user hovers over self.boundary_button
         Label(self.modify_pane, text="Toggle to draw automatic boundaries.").pack()
         self.boundary_var = IntVar()
         self.boundary_button = Button(self.modify_pane, text="Auto-Detect Boundary", command=self.toggle_boundary)
         self.boundary_button.pack()
 
         # Apply Button
+        # TODO this lable should appear when the user hovers over self.apply_button
         Label(self.modify_pane, text="Automatically remove pixels outside the largest boundary.").pack()
         self.apply_button = Button(self.modify_pane, text="Auto Clean", command=self.apply_modifications)
         self.apply_button.pack()
 
-        # Draw Checkbo
+        # Draw Checkbox
+        # TODO this lable should appear when the user hovers over self.draw_check
         Label(self.modify_pane, text="Enable drawing mode for local boundary.").pack()
         self.draw_var = IntVar()
         self.draw_check = Checkbutton(self.modify_pane, text="Draw", variable=self.draw_var)
@@ -578,6 +651,8 @@ class ImageBinarizationApp:
         self.undo_button.pack()
         self.redo_button = Button(self.modify_pane, text="Redo", command=self.redo_action)
         self.redo_button.pack()
+
+        # TODO add a help button
 
     def on_threshold_slide_end(self, *args):
         # Clear the points after applying the local threshold
@@ -719,13 +794,16 @@ class SpheroidAnalysisApp:
         self.id_dict_entries = []
         self.summary_files = []
         self.id_dict_keys = ['experiment #']
+        self.time_regex = 'day'
 
-    def open_analyze_window(self):
+    def open_analyze_window(self, time_regex):
         # Hide the main window
         self.root.withdraw()
 
         if not self.kill_queue.empty():
             self.kill_queue.get()
+
+        self.time_regex = time_regex
 
         # Create the binarize window
         self.analyze_window = Toplevel()
@@ -753,6 +831,7 @@ class SpheroidAnalysisApp:
         self.progress.grid(row=3, column=0, columnspan=2, sticky='we')
 
         # Run button
+        # TODO disable when no folder selected
         self.run_button = Button(self.analyze_window, text="Run Analysis", command=self.run_analysis)
         self.run_button.grid(row=4, column=0, columnspan=2)
 
@@ -849,8 +928,9 @@ class SpheroidAnalysisApp:
             if self.analyze_window: self.analyze_window.after(0, self.update_progress_bar, p)
 
         # Update this line in the analysis_logic method
+        # TODO diagnose why this throws a error during analyze - RuntimeError: main thread is not in main loop
         save_to_pdf = self.save_to_pdf_var.get()
-        summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, save_images_to_pdf=save_to_pdf)
+        summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, self.time_regex, save_images_to_pdf=save_to_pdf)
         self.summary_files.append(summary_file_path)
 
         # Complete the progress bar
