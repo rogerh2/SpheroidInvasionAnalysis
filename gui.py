@@ -8,6 +8,7 @@ import cv2
 import os
 import pandas as pd
 import threading
+import webbrowser
 
 from binarize import BinarizedImage
 from quantify_image_set import analysis_logic
@@ -63,6 +64,12 @@ def open_modify_help_window(master_window, label_str):
 
     help_label.bind('<Configure>', lambda e: update_label_wrap(help_label, help_frame))
     help_window.protocol("WM_DELETE_WINDOW", on_close_modify_help_window)  # Handle the close event
+
+def open_folder_in_explorer(folder_path):
+    # Check if the folder path is not empty and exists
+    if folder_path and os.path.exists(folder_path):
+        # Open the folder in the default file explorer
+        webbrowser.open(f'file://{folder_path}')
 
 
 class MainMenu:
@@ -771,6 +778,7 @@ class SpheroidAnalysisApp:
         self.progress = None
         self.run_button = None
         self.save_to_pdf_checkbox = None
+        self.analysis_thread = threading.Thread(target=self.analysis_logic)
         self.kill_queue = Queue()
         self.selected_folder = ""
         self.id_dict_entries = []
@@ -808,10 +816,6 @@ class SpheroidAnalysisApp:
         self.id_dict_entries = []
         self.create_id_dict_ui()
 
-        # Progress bar
-        self.progress = ttk.Progressbar(self.analyze_window, orient=HORIZONTAL, length=300, mode='determinate')
-        self.progress.grid(row=3, column=0, columnspan=2, sticky='we')
-
         # Run button
         self.run_button = Button(self.analyze_window, text="Run Analysis", command=self.run_analysis)
         self.run_button.grid(row=4, column=0, columnspan=2)
@@ -831,8 +835,7 @@ class SpheroidAnalysisApp:
             self.analyze_window.destroy()  # Destroy the analysis window
             self.analyze_window = None  # Reset the window variable
 
-        if self.kill_queue.empty():
-            self.kill_queue.put(True)
+        self.cancel_analysis()
 
         # Reset all components to None
         self.folder_label = None
@@ -898,9 +901,27 @@ class SpheroidAnalysisApp:
         self.run_button['state'] = NORMAL if self.selected_folder else DISABLED
 
     def run_analysis(self):
+        # Show the progress window
+        self.create_progress_window()
+
         # Start the analysis in a new thread
-        analysis_thread = threading.Thread(target=self.analysis_logic)
-        analysis_thread.start()
+        if not self.analysis_thread.is_alive():
+            self.analysis_thread = threading.Thread(target=self.analysis_logic)
+            self.analysis_thread.start()
+
+    def create_progress_window(self):
+        self.progress_window = Toplevel(self.root)
+        self.progress_window.title("Processing")
+        self.progress_label = Label(self.progress_window, text="Processing 0% complete")
+        self.progress_label.pack()
+
+        self.progress = ttk.Progressbar(self.progress_window, orient=HORIZONTAL, length=300, mode='determinate')
+        self.progress.pack()
+
+        self.cancel_button = Button(self.progress_window, text="Cancel", command=self.cancel_analysis)
+        self.cancel_button.pack()
+        self.progress_window.protocol("WM_DELETE_WINDOW", self.on_close_progress_bar)
+
 
     def analysis_logic(self):
         data_fldr = self.selected_folder
@@ -919,8 +940,29 @@ class SpheroidAnalysisApp:
         if self.analyze_window:
             self.analyze_window.after(0, self.update_progress_bar, 100)
 
-    def update_progress_bar(self, value):
+    def update_progress_bar(self, value, canceling_analysis=False):
         self.progress['value'] = value
+
+        if canceling_analysis:
+            self.progress_label.config(text=f"Cancelling")
+            return
+
+        self.progress_label.config(text=f"Processing {value:.1f}% complete")
+        if value >= 100:
+            self.progress_label.config(text="Processing complete!")
+            open_folder_in_explorer(self.selected_folder)
+
+    def cancel_analysis(self):
+        if self.analysis_thread.is_alive():
+            self.kill_queue.put(True)
+            self.update_progress_bar(0.0, True)
+
+    def on_close_progress_bar(self):
+        if (not self.analysis_thread.is_alive()) and (self.progress_window.state() == 'normal'):
+            self.progress_window.destroy()
+
+
+
 
 
 class CSVConcatenatorApp:

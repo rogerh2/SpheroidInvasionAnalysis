@@ -28,6 +28,7 @@ class SpheroidImage:
 
     Args:
         fpath (str): The file path to the spheroid image.
+        kill_Q (queue.Queue): A queue to send a kill signal to end the analysis early if desired
 
     Attributes:
         boundary (array): The boundary coordinates of the largest spheroid in the image
@@ -37,7 +38,7 @@ class SpheroidImage:
         y_coords (array): The y coordinates of every pixel in img_array
     """
 
-    def __init__(self, fpath):
+    def __init__(self, fpath, kill_Q: Queue):
         source_image = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)
 
         # Find contours in the source image
@@ -55,6 +56,7 @@ class SpheroidImage:
         self.centroid = np.array([X, Y])
         self.img_array = source_image
         self.fname = Path(fpath).stem
+        self.kill_queue = kill_Q
 
         # Generate a range of numbers for the width and height
         x_range = np.arange(source_image.shape[0])
@@ -136,8 +138,12 @@ class SpheroidImage:
         distance_magnitude = np.zeros(num_pix)
         close_inds = np.zeros(num_pix)
         boundary_pixels_full = np.zeros(outer_pixels_full.shape)
+        kill_sig = False
 
         for i in range(num_batches):
+            if not self.kill_queue.empty():
+                kill_sig = self.kill_queue.get()
+                break
             # Select the outer pixels for this batch
             outer_pixels = outer_pixels_full[i * batch_size : min((i + 1) * batch_size, num_pix)]
 
@@ -199,7 +205,7 @@ class SpheroidImage:
             distance_magnitude[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.sqrt((x1 - xb_close) ** 2 + (y1 - yb_close) ** 2)  # shape N
             boundary_pixels_full[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.stack((xb_close, yb_close), axis=1)
 
-        return distance_magnitude, close_inds, outer_pixels_full - self.centroid, boundary_pixels_full
+        return distance_magnitude, close_inds, outer_pixels_full - self.centroid, boundary_pixels_full, kill_sig
 
     def pca(self, save_fldr_path, angles, speeds, t, save_images_to_pdf):
         """
@@ -363,6 +369,7 @@ class QuantSpheroidSet:
     Args:
         image_fpaths (list): A list of file paths for the images.
         pattern (str): The regular expression that yields the time unit from the file name
+        kill_Q (queue.Queue): A queue to send a kill signal to end the analysis early if desired
         save_path (str, optional): The path where outputs should be saved. If None, uses the
                                    directory of the first image.
 
@@ -373,7 +380,7 @@ class QuantSpheroidSet:
         save_fldr_path (str): Path to the folder where outputs will be saved.
     """
 
-    def __init__(self, image_fpaths, pattern, save_path=None):
+    def __init__(self, image_fpaths, pattern, kill_Q: Queue, save_path=None):
         # Extracting time information from the image filenames
         sample_times = np.array([int(re.search(pattern, os.path.basename(filename)).group(1))
                         for filename in image_fpaths if re.search(pattern, filename)])
@@ -384,7 +391,7 @@ class QuantSpheroidSet:
         self.paths = array_paths[sample_times.argsort()]
 
         # Loading images as SpheroidImage objects
-        self.images = [SpheroidImage(fpath) for fpath in self.paths]
+        self.images = [SpheroidImage(fpath, kill_Q) for fpath in self.paths]
         self.line_width = 1
         self.marker_size = 20
 
@@ -448,11 +455,14 @@ class QuantSpheroidSet:
         coordinates = []
         outer_coordinates = []
         times = []
+        kill_sig = False
 
         # Iterating over images (excluding the first) to calculate metrics
         for i, img in enumerate(self.images[1:], start=1):
             centered_boundary = img.center_boundary(init_bound, boundary_centroid)
-            dist, inds, coor, boundary_coor = img.intersection_distance(centered_boundary)
+            dist, inds, coor, boundary_coor, kill_sig = img.intersection_distance(centered_boundary)
+            if kill_sig:
+                break
             angles = img.get_angles_outside_boundary(centered_boundary)
 
             plt.figure()
@@ -608,7 +618,7 @@ class QuantSpheroidSet:
         angles_ls = np.asarray(angles_ls)
         outer_coordinates = np.asarray(outer_coordinates)
 
-        return distances, indices, coordinates, angles_ls, outer_coordinates
+        return distances, indices, coordinates, angles_ls, outer_coordinates, kill_sig
 
 
 def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles_array, outer_distances_xy, centerdistance_lengths,
@@ -862,8 +872,12 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
         if not os.path.isdir(save_fldr_path):
             os.makedirs(save_fldr_path)
 
-        image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment, pattern)
-        distances, indices, pixles, angles, outer_coordinates = image_set_for_this_experiment.distances_outside_initial_boundary(save_fldr_path, save_images_to_pdf)
+        image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment, pattern, kill_queue)
+        distances, indices, pixles, angles, outer_coordinates, kill_sig = image_set_for_this_experiment.distances_outside_initial_boundary(save_fldr_path, save_images_to_pdf)
+
+        if kill_sig:
+            print('early stop')
+            return
 
         A0 = np.sum(image_set_for_this_experiment.images[0].img_array)
 
