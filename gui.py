@@ -13,6 +13,58 @@ from binarize import BinarizedImage
 from quantify_image_set import analysis_logic
 
 
+def create_tooltip(widget, text):
+    def on_enter(event):
+        widget.tooltip = Toplevel(widget)
+        widget.tooltip.overrideredirect(True)
+        widget.tooltip.geometry(f"+{event.x_root+20}+{event.y_root+10}")
+        label = Label(widget.tooltip, text=text, background="lightyellow")
+        label.pack()
+
+    def on_leave(event):
+        if hasattr(widget, 'tooltip'):
+            widget.tooltip.destroy()
+
+    def on_click(event):
+        if hasattr(widget, 'tooltip'):
+            widget.tooltip.destroy()
+
+    widget.bind("<Enter>", on_enter)
+    widget.bind("<Leave>", on_leave)
+    widget.bind("<Button-1>", on_click)
+
+
+def update_label_wrap(label, frame):
+    """ Update the wraplength of the instructions label based on the window width. """
+    if frame:
+        new_width = frame.winfo_width() # Use frame width with padding
+        min_width = 100  # Set a minimum width threshold
+
+        # Only update if new width is greater than the minimum threshold
+        if (new_width > min_width):
+            label.configure(wraplength=new_width)
+
+
+def open_modify_help_window(master_window, label_str):
+    help_window = Toplevel(master_window)
+    help_window.title("Help")
+
+    help_frame = Frame(help_window)
+    help_frame.pack(fill='both', expand=True)
+
+    help_label = Label(help_window,
+                       text=label_str,
+                       justify=LEFT)
+    help_label.pack()
+
+    def on_close_modify_help_window():
+        if help_window:
+            help_window.destroy()
+
+    help_label.bind('<Configure>', lambda e: update_label_wrap(help_label, help_frame))
+    help_window.protocol("WM_DELETE_WINDOW", on_close_modify_help_window)  # Handle the close event
+
+
 class MainMenu:
 
     def __init__(self, master):
@@ -53,17 +105,7 @@ class MainMenu:
         self.time_unit_entry.pack()  # Pack the text box into the frame
 
         # Add a Help button
-        self.help_button = Button(self.frame, text="Help", command=self.open_help_window)
-        self.help_button.pack()  # Adjust the positioning according to your layout
-
-    def open_help_window(self):
-        self.help_window = Toplevel(self.master)
-        self.help_window.title("Help")
-
-        self.help_frame = Frame(self.help_window)
-        self.help_frame.pack(fill='both', expand=True)
-
-        self.instructions_label = Label(self.help_frame, text="File Naming Instructions:\n"
+        self.help_button = Button(self.frame, text="Help", command=lambda: open_modify_help_window(self.master, "File Naming Instructions:\n"
                                 "Image file names should begin with an integer number followed"
                                 " by '_'. The number denotes which spheroid an image belongs to."
                                 " So all time points of the same spheroid should share the same"
@@ -72,41 +114,8 @@ class MainMenu:
                                 "1. Open 'Binarize' to binarize and modify images if desired.\n"
                                 "2. Open 'Analyze' to calculate metrics.\n"
                                 "3. Use 'Consolidate' to concatenate all the data csv files.\n\n"
-                                "To return to the main window from a sub window close the subwindow with the x",
-              justify='left')
-        self.instructions_label.pack()
-
-        # Bind window resize event to update label wrap
-        # self.update_label_wrap_initial()
-        self.instructions_label.bind('<Configure>', self.update_label_wrap)
-        self.help_window.protocol("WM_DELETE_WINDOW", self.on_close_help_window)  # Handle the close event
-
-
-    def on_close_help_window(self):
-        if self.help_window:
-            self.help_window.destroy()  # Destroy the analysis window
-            self.help_window = None  # Reset the window variable
-
-        self.help_frame = None
-        self.instructions_label = None
-
-
-    # def update_label_wrap_initial(self):
-    #     """ Set initial wrap length based on current frame width. """
-    #     if self.help_frame:
-    #         initial_width = self.help_frame.winfo_width()
-    #         if initial_width > 0:  # Check if the initial width is valid
-    #             self.instructions_label.configure(wraplength=initial_width)
-
-    def update_label_wrap(self, event):
-        """ Update the wraplength of the instructions label based on the window width. """
-        if self.help_frame:
-            new_width = self.help_frame.winfo_width() # Use frame width with padding
-            min_width = 100  # Set a minimum width threshold
-
-            # Only update if new width is greater than the minimum threshold
-            if (new_width > min_width):
-                self.instructions_label.configure(wraplength=new_width)
+                                "To return to the main window from a sub window close the subwindow with the x"))
+        self.help_button.pack()  # Adjust the positioning according to your layout
 
     def open_concat_window(self):
             self.concat_ap.open_consolidate_window(self.analyze_ap.summary_files)
@@ -174,7 +183,7 @@ class ImageBinarizationApp:
         self.boundary_var = None
         self.boundary_check = None
         self.apply_button = None
-        self.draw_var = None
+        self.draw_var = False
         self.draw_check = None
         self.popup = None
         self.continue_button = None
@@ -309,11 +318,11 @@ class ImageBinarizationApp:
             self.add_point(event)
 
     def delete_points(self):
-        # TODO if right canvas is not defined don't try to delete
-        for oval_id in self.oval_ids:
-            self.right_canvas.delete(oval_id)
-        self.oval_ids = []  # Reset the list after deleting the ovals
-        self.points = []
+        if self.right_canvas:
+            for oval_id in self.oval_ids:
+                self.right_canvas.delete(oval_id)
+            self.oval_ids = []  # Reset the list after deleting the ovals
+            self.points = []
 
     def delete_region(self):
         # Check if there are enough points to define a boundary
@@ -329,6 +338,9 @@ class ImageBinarizationApp:
             messagebox.showinfo("Info", "Please draw a boundary on the image to delete a region.")
 
     def navigate_images(self, direction):
+        # TODO when pulling up an image automatically set the slider to its threshold. This requires storing the
+        #  threshold for each image as you change. Initially this should be none (in which case it takes on the last
+        #  threshold used as a default)
         # Navigate to the next or previous image based on the direction
         if direction == 'next' and self.image_index < len(self.image_list) - 1:
             self.image_index += 1
@@ -538,24 +550,84 @@ class ImageBinarizationApp:
         self.reset_view_button = Button(self.image_frame, text="Reset View", command=self.reset_view)
         self.reset_view_button.pack(side='left')
 
-        # Modify button
-        self.modify_button = Button(modify_frame, text="Modify", command=self.open_modify_pane)
-        self.modify_button.pack()
+        # # Modify button
+        # self.modify_button = Button(modify_frame, text="Modify", command=self.open_modify_pane)
+        # self.modify_button.pack()
 
-        self.prev_button = Button(button_frame, text="<< Prev", command=lambda: self.navigate_images('prev'))
-        self.prev_button.pack(side='left')
+        self.prev_button = Button(modify_frame, text="<< Prev", command=lambda: self.navigate_images('prev'))
+        self.prev_button.pack(side='left', padx=10)
 
-        self.next_button = Button(button_frame, text="Next >>", command=lambda: self.navigate_images('next'))
-        self.next_button.pack(side='left')
+        self.next_button = Button(modify_frame, text="Next >>", command=lambda: self.navigate_images('next'))
+        self.next_button.pack(side='left', padx=10)
 
-        self.save_button = Button(button_frame, text="Save", command=self.save_binarized_images)
-        self.save_button.pack(side='left')
+        self.save_button = Button(modify_frame, text="Save", command=self.save_binarized_images)
+        self.save_button.pack(side='left', padx=10)
 
         # If there are images in the folder, load the first one
         if self.image_list:
             self.preload_images()
             self.load_image(self.image_list[0])
             self.update_canvas()
+
+        # Additional GUI components for modification
+        modify_frame = Frame(self.binarize_window)
+        modify_frame.pack(side='bottom', fill='x')
+
+        # Local Threshold Slider
+        self.local_thresh_scale = Scale(modify_frame, from_=0, to_=255, orient=HORIZONTAL,
+                                        command=self.update_threshold, label="Threshold")
+        self.local_thresh_scale.grid(row=1, column=0, sticky='we', padx=10, columnspan=4)
+        self.local_thresh_scale.bind("<ButtonRelease-1>", self.on_threshold_slide_end)
+        self.local_thresh_scale.set(int(self.recent_threshold))
+        create_tooltip(self.local_thresh_scale, "Set a threshold either globally or within a boundary")
+
+        # Blur Slider
+        self.blur_scale = Scale(modify_frame, from_=1, to_=11, resolution=2, orient=HORIZONTAL,
+                                label="Blur", command=self.update_canvas)
+        self.blur_scale.grid(row=2, column=0, sticky='we', padx=10, columnspan=4)
+        create_tooltip(self.blur_scale, "Set a Gaussian blur for automatic boundary detection")
+
+        # Boundary Toggle Button
+        self.boundary_var = IntVar()
+        self.boundary_button = Button(modify_frame, text="Auto-Detect Boundary", command=self.toggle_boundary)
+        self.boundary_button.grid(row=0, column=0, padx=10)
+        create_tooltip(self.boundary_button, "Toggle to draw automatic boundaries")
+
+        # Apply Button
+        self.apply_button = Button(modify_frame, text="Auto Clean", command=self.apply_modifications)
+        self.apply_button.grid(row=0, column=1, padx=10)
+        create_tooltip(self.apply_button, "Automatically remove pixels outside the largest boundary")
+
+        # Draw Checkbox
+        self.draw_var = False
+
+        self.draw_button = Button(modify_frame, text="Draw", relief="raised", command=self.toggle_draw_mode)
+        self.draw_button.grid(row=0, column=2, padx=10)
+        create_tooltip(self.draw_button, "Toggle drawing mode for local boundary")
+
+
+        # Undo and Redo Buttons
+        self.undo_button = Button(modify_frame, text="Undo", command=self.undo_action)
+        self.undo_button.grid(row=0, column=3, padx=10)
+        self.redo_button = Button(modify_frame, text="Redo", command=self.redo_action)
+        self.redo_button.grid(row=0, column=4, padx=10)
+
+        help_txt = (
+            "Instructions:\n- Use threshold slider to adjust binarization threshold.\nIf a boundary is drawn this only adjusts the threshold within the boundary\n\n"
+            "- Toggle boundary for automatic contour detection, use blur to adjust the auto boundary resolution.\n\n"
+            "- Auto clean to remove pixels not in the largest boundary found by auto boundary.")
+
+        self.help_button = Button(modify_frame, text="Help",
+                                  command=lambda: open_modify_help_window(self.binarize_window, help_txt))
+        self.help_button.grid(row=0, column=5, padx=10)
+
+    def toggle_draw_mode(self):
+        self.draw_var = not self.draw_var
+        if self.draw_var:
+            self.draw_button.config(relief="sunken")
+        else:
+            self.draw_button.config(relief="raised")
+            self.delete_points()
 
     def on_close_binarize_window(self):
         """Close the binarize window and reset related variables to their default settings."""
@@ -592,73 +664,18 @@ class ImageBinarizationApp:
         self.next_button = None
         self.save_button = None
 
-        # Close the modify pane if it's open
-        self.on_close_modify_pane()
-
         # Show the main window again
         self.master.deiconify()
 
-    def open_modify_pane(self):
-        # TODO have the modify pane become part of the binarization app window
-        # Bring the modify pane to front if it's open
-        if self.modify_pane and self.modify_pane.winfo_exists():
-            self.modify_pane.lift()
-            return
-
-        # Create the modify pane as a Toplevel window
-        self.modify_pane = Toplevel(self.binarize_window)
-        self.modify_pane.title("Modifications")
-        self.modify_pane.protocol("WM_DELETE_WINDOW", self.on_close_modify_pane)  # Handle the close event
-
-        # Instructions Pane
-        # TODO make this label a popup that appears when the user preses help
-        Label(self.modify_pane, text="Instructions:\n- Use threshold slider to adjust binarization threshold.\nIf a boundary is drawn this only adjusts the threshold within the boundary\n\n"
-                                     "- Toggle boundary for automatic contour detection, use blur to adjust the auto boundary resolution.\n\n"
-                                     "- Auto clean to remove pixels not in the largest boundary found by auto boundary.", justify=LEFT).pack(side='right', fill='y')
-
-        # Local Threshold Slider
-        # TODO this lable should appear when the user hovers over self.local_thresh_scale
-        Label(self.modify_pane, text="Set a threshold either globally or within a boundary").pack()
-        self.local_thresh_scale = Scale(self.modify_pane, from_=0, to_=255, orient=HORIZONTAL,
-                                     command=self.update_threshold, label="Threshold")
-        self.local_thresh_scale.bind("<ButtonRelease-1>", self.on_threshold_slide_end)
-        self.local_thresh_scale.set(int(self.recent_threshold))
-        self.local_thresh_scale.pack(fill='x')
-
-        # Blur Slider
-        # TODO this lable should appear when the user hovers over self.blur_scale
-        Label(self.modify_pane, text="Set a Gaussian blur for automatic boundary detection.").pack()
-        self.blur_scale = Scale(self.modify_pane, from_=1, to_=11, resolution=2, orient=HORIZONTAL,
-                                label="Blur", command=self.update_canvas)
-        self.blur_scale.pack(fill='x')
-
-        # Boundary Toggle Button
-        # TODO this lable should appear when the user hovers over self.boundary_button
-        Label(self.modify_pane, text="Toggle to draw automatic boundaries.").pack()
-        self.boundary_var = IntVar()
-        self.boundary_button = Button(self.modify_pane, text="Auto-Detect Boundary", command=self.toggle_boundary)
-        self.boundary_button.pack()
-
-        # Apply Button
-        # TODO this lable should appear when the user hovers over self.apply_button
-        Label(self.modify_pane, text="Automatically remove pixels outside the largest boundary.").pack()
-        self.apply_button = Button(self.modify_pane, text="Auto Clean", command=self.apply_modifications)
-        self.apply_button.pack()
-
-        # Draw Checkbox
-        # TODO this lable should appear when the user hovers over self.draw_check
-        Label(self.modify_pane, text="Enable drawing mode for local boundary.").pack()
-        self.draw_var = IntVar()
-        self.draw_check = Checkbutton(self.modify_pane, text="Draw", variable=self.draw_var)
-        self.draw_check.pack()
-
-        # Add buttons to undo and redo changes
-        self.undo_button = Button(self.modify_pane, text="Undo", command=self.undo_action)
-        self.undo_button.pack()
-        self.redo_button = Button(self.modify_pane, text="Redo", command=self.redo_action)
-        self.redo_button.pack()
-
-        # TODO add a help button
+        # Reset variables associated with modification components
+        self.local_thresh_scale = None
+        self.blur_scale = None
+        self.boundary_var = None
+        self.apply_button = None
+        self.draw_check = None
+        self.undo_button = None
+        self.redo_button = None
+        self.help_button = None
 
     def on_threshold_slide_end(self, *args):
         # Clear the points after applying the local threshold
@@ -678,22 +695,6 @@ class ImageBinarizationApp:
         # Update the canvas with potential modifications
         self.update_canvas()
 
-    def on_close_modify_pane(self):
-        """Close the modify pane and reset related variables to their default values."""
-        if self.modify_pane:
-            self.modify_pane.destroy()  # Destroy the modify pane window
-            self.modify_pane = None  # Reset the window variable
-
-        # Reset all variables associated with the modify pane to their default values
-        self.local_thresh_scale = None
-        self.blur_scale = None
-        self.boundary_var = None
-        self.draw_check = None
-        self.apply_button = None
-        self.draw_var = None
-        self.threshold_scale = None
-        self.set_scale_loc_only = False
-
     def apply_modifications(self):
 
         # Apply a local threshold of 256 to all contours except the largest
@@ -710,37 +711,21 @@ class ImageBinarizationApp:
         self.update_canvas()
 
     def start_panning(self, event):
-        if self.draw_var:
-            if not self.draw_var.get():  # Only start panning if not in draw mode
+        if not self.draw_var:  # Only start panning if not in draw mode
                 self.pan_start_x, self.pan_start_y = event.x, event.y
-        else:
-            self.pan_start_x, self.pan_start_y = event.x, event.y
 
     def stop_panning(self, event):
-        if self.draw_var:
-            if not self.draw_var.get():  # Only start panning if not in draw mode
-                # Update pan offsets
-                self.pan_offset_x += event.x - self.pan_start_x
-                self.pan_offset_y += event.y - self.pan_start_y
-        else:
+        if not self.draw_var:  # Only start panning if not in draw mode
             # Update pan offsets
             self.pan_offset_x += event.x - self.pan_start_x
             self.pan_offset_y += event.y - self.pan_start_y
 
     def pan_image(self, event):
-        if self.draw_var:
-            if not self.draw_var.get():  # Only pan if not in draw mode
-                dx = event.x - self.pan_start_x
-                dy = event.y - self.pan_start_y
-
-                # Cast dx and dy to integers before passing them to scan_dragto
-                self.left_canvas.scan_dragto(int(dx + self.pan_offset_x), int(dy + self.pan_offset_y), gain=1)
-                self.right_canvas.scan_dragto(int(dx + self.pan_offset_x), int(dy + self.pan_offset_y), gain=1)
-                # self.pan_start_x, self.pan_start_y = event.x, event.y
-        else:
+        if not self.draw_var:  # Only pan if not in draw mode
             dx = event.x - self.pan_start_x
             dy = event.y - self.pan_start_y
 
+            # Cast dx and dy to integers before passing them to scan_dragto
             self.left_canvas.scan_dragto(int(dx + self.pan_offset_x), int(dy + self.pan_offset_y), gain=1)
             self.right_canvas.scan_dragto(int(dx + self.pan_offset_x), int(dy + self.pan_offset_y), gain=1)
             # self.pan_start_x, self.pan_start_y = event.x, event.y
@@ -757,30 +742,21 @@ class ImageBinarizationApp:
     def on_mouse_click(self, event):
         # Decide whether to start drawing or panning based on the 'Draw' checkbox
         if self.draw_var:
-            if self.draw_var.get():
-                self.start_drawing(event)
-            else:
-                self.start_panning(event)
+            self.start_drawing(event)
         else:
             self.start_panning(event)
 
     def on_mouse_move(self, event):
         # Decide whether to draw or pan based on the 'Draw' checkbox
         if self.draw_var:
-            if self.draw_var.get():
-                self.draw_boundary(event)
-            else:
-                self.pan_image(event)
+            self.draw_boundary(event)
         else:
             self.pan_image(event)
 
     def on_mouse_release(self, event):
         # Stop drawing or panning
         if self.draw_var:
-            if self.draw_var.get():
-                self.stop_drawing(event)
-            else:
-                self.stop_panning(event)
+            self.stop_drawing(event)
         else:
             self.stop_panning(event)
             
