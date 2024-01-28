@@ -822,9 +822,10 @@ class SpheroidAnalysisApp:
         self.run_button['state'] = DISABLED
 
         # Checkbox for saving to PDF
-        self.save_to_pdf_var = BooleanVar()
-        self.save_to_pdf_checkbox = Checkbutton(self.analyze_window, text='Save to PDF', variable=self.save_to_pdf_var)
-        self.save_to_pdf_checkbox.grid(row=5, column=0, columnspan=2)
+        # Currently the PDF saving method has issues so it's disabled for now
+        # self.save_to_pdf_var = BooleanVar()
+        # self.save_to_pdf_checkbox = Checkbutton(self.analyze_window, text='Save to PDF', variable=self.save_to_pdf_var)
+        # self.save_to_pdf_checkbox.grid(row=5, column=0, columnspan=2)
 
 
     def on_close_analyze_window(self):
@@ -855,13 +856,14 @@ class SpheroidAnalysisApp:
         key_entry.pack(side=LEFT)
         value_entry.pack(side=LEFT)
         row.pack(side=TOP, fill=X)
-        self.id_dict_entries.append((key_entry, value_entry))
+        self.id_dict_entries.append((key_entry, value_entry, row))
 
     def remove_id_dict_row(self):
         if len(self.id_dict_entries) > 1:
-            key_entry, value_entry = self.id_dict_entries.pop()
-            key_entry.destroy()
-            value_entry.destroy()
+            key_entry, value_entry, row_frame = self.id_dict_entries.pop()
+
+            # Destroy the entire row frame along with its children widgets
+            row_frame.destroy()
 
             # Remove the last key from self.id_dict_keys
             if self.id_dict_keys:
@@ -881,7 +883,7 @@ class SpheroidAnalysisApp:
         id_dict = {}
         keys = []
 
-        for key_entry, value_entry in self.id_dict_entries:
+        for key_entry, value_entry, _ in self.id_dict_entries:
             key = key_entry.get()
             value = value_entry.get()
             if key and value:
@@ -932,7 +934,7 @@ class SpheroidAnalysisApp:
             if self.analyze_window: self.analyze_window.after(0, self.update_progress_bar, p)
 
         # Update this line in the analysis_logic method
-        save_to_pdf = self.save_to_pdf_var.get()
+        save_to_pdf = False # self.save_to_pdf_var.get()
         summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, self.time_regex, save_images_to_pdf=save_to_pdf)
         self.summary_files.append(summary_file_path)
 
