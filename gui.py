@@ -208,11 +208,16 @@ class ImageBinarizationApp:
         if self.current_state_index < len(self.image_states) - 1:
             self.restore_state(self.current_state_index + 1)
 
-    def load_image(self, image_path):
-        # TODO this should not load a new copy of the image, Load all images at the start and store them, navigating
-        #  should open the same image
+    def preload_images(self):
+        self.preloaded_images = {}
+        for img_name in self.image_list:
+            img_path = os.path.join(self.image_folder_path, img_name)
+            self.preloaded_images[img_name] = BinarizedImage(img_path, self.save_folder_path)
+
+    def load_image(self, image_name):
+
         # Load and display the image
-        self.current_image = BinarizedImage(image_path, self.save_folder_path)
+        self.current_image = self.preloaded_images.get(image_name)
 
         # Reset to the default view when loading an image
         self.reset_view()
@@ -231,9 +236,9 @@ class ImageBinarizationApp:
         self.threshold_states.append(np.copy(self.recent_threshold))
         self.current_state_index += 1
 
-    def save_binarized_image(self):
-        # TODO have this save all images
-        self.current_image.save_binarized_image()
+    def save_binarized_images(self):
+        for img_name, img in self.preloaded_images.items():
+            img.save_binarized_image()
 
     def update_threshold(self, val):
         threshold_value = int(val)
@@ -331,7 +336,7 @@ class ImageBinarizationApp:
             self.image_index -= 1
 
         # Load the image and update the canvas
-        self.load_image(os.path.join(self.image_folder_path, self.image_list[self.image_index]))
+        self.load_image(self.image_list[self.image_index])
         self.update_canvas()
 
         # Bring the modify pane to front if it's open
@@ -342,7 +347,7 @@ class ImageBinarizationApp:
         # Skip to a specific image number
         if 0 <= image_number < len(self.image_list):
             self.image_index = image_number
-            self.load_image(os.path.join(self.image_folder_path, self.image_list[self.image_index]))
+            self.load_image(self.image_list[self.image_index])
             self.update_canvas()
         else:
             messagebox.showinfo("Info", "Invalid image number.")
@@ -543,12 +548,13 @@ class ImageBinarizationApp:
         self.next_button = Button(button_frame, text="Next >>", command=lambda: self.navigate_images('next'))
         self.next_button.pack(side='left')
 
-        self.save_button = Button(button_frame, text="Save", command=self.save_binarized_image)
+        self.save_button = Button(button_frame, text="Save", command=self.save_binarized_images)
         self.save_button.pack(side='left')
 
         # If there are images in the folder, load the first one
         if self.image_list:
-            self.load_image(os.path.join(self.image_folder_path, self.image_list[0]))
+            self.preload_images()
+            self.load_image(self.image_list[0])
             self.update_canvas()
 
     def on_close_binarize_window(self):
@@ -831,9 +837,9 @@ class SpheroidAnalysisApp:
         self.progress.grid(row=3, column=0, columnspan=2, sticky='we')
 
         # Run button
-        # TODO disable when no folder selected
         self.run_button = Button(self.analyze_window, text="Run Analysis", command=self.run_analysis)
         self.run_button.grid(row=4, column=0, columnspan=2)
+        self.run_button['state'] = DISABLED
 
         # Checkbox for saving to PDF
         self.save_to_pdf_var = BooleanVar()
@@ -913,6 +919,7 @@ class SpheroidAnalysisApp:
     def select_folder(self):
         self.selected_folder = filedialog.askdirectory()
         self.folder_label.config(text=f"Selected Folder: {self.selected_folder}")
+        self.run_button['state'] = NORMAL if self.selected_folder else DISABLED
 
     def run_analysis(self):
         # Start the analysis in a new thread
@@ -928,7 +935,6 @@ class SpheroidAnalysisApp:
             if self.analyze_window: self.analyze_window.after(0, self.update_progress_bar, p)
 
         # Update this line in the analysis_logic method
-        # TODO diagnose why this throws a error during analyze - RuntimeError: main thread is not in main loop
         save_to_pdf = self.save_to_pdf_var.get()
         summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, self.time_regex, save_images_to_pdf=save_to_pdf)
         self.summary_files.append(summary_file_path)

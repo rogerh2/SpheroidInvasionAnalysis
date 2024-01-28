@@ -7,6 +7,8 @@ import re
 import cv2
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 from matplotlib.widgets import Slider
 from sklearn.decomposition import PCA
