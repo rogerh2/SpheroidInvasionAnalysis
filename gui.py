@@ -46,7 +46,7 @@ def update_label_wrap(label, frame):
             label.configure(wraplength=new_width)
 
 
-def open_modify_help_window(master_window, label_str):
+def open_help_window(master_window, label_str):
     help_window = Toplevel(master_window)
     help_window.title("Help")
 
@@ -112,7 +112,7 @@ class MainMenu:
         self.time_unit_entry.pack()  # Pack the text box into the frame
 
         # Add a Help button
-        self.help_button = Button(self.frame, text="Help", command=lambda: open_modify_help_window(self.master, "File Naming Instructions:\n"
+        self.help_button = Button(self.frame, text="Help", command=lambda: open_help_window(self.master, "File Naming Instructions:\n"
                                 "Image file names should begin with an integer number followed"
                                 " by '_'. The number denotes which spheroid an image belongs to."
                                 " So all time points of the same spheroid should share the same"
@@ -130,7 +130,7 @@ class MainMenu:
     def run_analysis(self):
         time_unit = self.time_unit_var.get()  # Retrieve the value from the text box
         pattern = rf'{time_unit}(\d+)'
-        self.analyze_ap.open_analyze_window(pattern)
+        self.analyze_ap.open_analyze_window(pattern, time_unit)
 
 
 
@@ -625,7 +625,7 @@ class ImageBinarizationApp:
             "- Auto clean to remove pixels not in the largest boundary found by auto boundary.")
 
         self.help_button = Button(modify_frame, text="Help",
-                                  command=lambda: open_modify_help_window(self.binarize_window, help_txt))
+                                  command=lambda: open_help_window(self.binarize_window, help_txt))
         self.help_button.grid(row=0, column=5, padx=10)
 
     def toggle_draw_mode(self):
@@ -785,8 +785,9 @@ class SpheroidAnalysisApp:
         self.summary_files = []
         self.id_dict_keys = ['experiment #']
         self.time_regex = 'day'
+        self.time_unit = 'day'
 
-    def open_analyze_window(self, time_regex):
+    def open_analyze_window(self, time_regex, time_unit):
         # Hide the main window
         self.root.withdraw()
 
@@ -794,6 +795,7 @@ class SpheroidAnalysisApp:
             self.kill_queue.get()
 
         self.time_regex = time_regex
+        self.time_unit = time_unit
 
         # Create the binarize window
         self.analyze_window = Toplevel()
@@ -935,7 +937,8 @@ class SpheroidAnalysisApp:
 
         # Update this line in the analysis_logic method
         save_to_pdf = False # self.save_to_pdf_var.get()
-        summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, self.time_regex, save_images_to_pdf=save_to_pdf)
+        summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, self.time_regex
+                                           , self.time_unit, save_images_to_pdf=save_to_pdf)
         self.summary_files.append(summary_file_path)
 
         # Complete the progress bar
@@ -996,17 +999,42 @@ class CSVConcatenatorApp:
 
         self.file_paths = init_file_paths
 
-        # Create a listbox to display file paths
-        self.listbox = Listbox(self.consolidate_window, width=50, height=10)
-        self.listbox.pack()
+        # Create frames for layout
+        left_frame = Frame(self.consolidate_window)
+        right_frame = Frame(self.consolidate_window)
+
+        # Position the frames using grid
+        left_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
+
+        # Configure grid column weight
+        self.consolidate_window.grid_columnconfigure(0, weight=1)
+        self.consolidate_window.grid_columnconfigure(1, weight=3)
+
+        # Create and place buttons in the left frame
+        self.select_button = Button(left_frame, text="Select CSV Files", command=self.select_files)
+        self.select_button.pack(fill='x')
+
+        self.remove_button = Button(left_frame, text="Remove files", command=self.remove_selected_files)
+        self.remove_button.pack(fill='x')
+
+        self.concatenate_button = Button(left_frame, text="Concatenate Files", command=self.concatenate_files)
+        self.concatenate_button.pack(fill='x')
+
+        # Create a label and listbox in the right frame
+        label = Label(right_frame, text="Files to concatenate")
+        label.pack()
+
+        self.listbox = Listbox(right_frame, width=50, height=10)
+        self.listbox.pack(fill='both', expand=True)
 
         self.update_initial_file_paths()
-        # Create and place buttons
-        self.select_button = Button(self.consolidate_window, text="Select CSV Files", command=self.select_files)
-        self.select_button.pack()
 
-        self.concatenate_button = Button(self.consolidate_window, text="Concatenate Files", command=self.concatenate_files)
-        self.concatenate_button.pack()
+    def remove_selected_files(self):
+        selected_indices = self.listbox.curselection()
+        for index in selected_indices[::-1]:
+            self.listbox.delete(index)
+            del self.file_paths[index]
 
     def on_close_consolidate_window(self):
 
@@ -1037,27 +1065,23 @@ class CSVConcatenatorApp:
             self.listbox.insert(END, display_text)
 
     def concatenate_files(self):
+        # TODO change the printout statements so that they appear in a popup
         if not self.file_paths:
-            print("No files selected to concatenate.")
+            open_help_window(self.consolidate_window, "No files selected to concatenate.")
             return
 
-        try:
-            # Read and concatenate all selected CSV files
-            dfs = [pd.read_csv(file) for file in self.file_paths]
-            concatenated_df = pd.concat(dfs, ignore_index=True)
+        # Read and concatenate all selected CSV files
+        dfs = [pd.read_csv(file) for file in self.file_paths]
+        concatenated_df = pd.concat(dfs, ignore_index=True)
 
-            # Save the concatenated DataFrame as a new CSV file
-            save_path = filedialog.asksaveasfilename(defaultextension=".csv",
-                                                     filetypes=[("CSV Files", "*.csv")])
-            if save_path:
-                concatenated_df.to_csv(save_path, index=False)
-                print(f"Concatenated CSV saved as {save_path}")
-            else:
-                print("Save operation cancelled.")
-
-        except Exception as e:
-            print(f"An error occurred: {e}")
-
+        # Save the concatenated DataFrame as a new CSV file
+        save_path = filedialog.asksaveasfilename(defaultextension=".csv",
+                                                 filetypes=[("CSV Files", "*.csv")])
+        if save_path:
+            concatenated_df.to_csv(save_path, index=False)
+            open_help_window(self.consolidate_window, f"Concatenated CSV saved as\n{save_path}")
+        else:
+            open_help_window(self.consolidate_window, "No save folder selected.")
 
 def main():
     # Create the main window (root of the Tk interface)
