@@ -233,6 +233,11 @@ class SpheroidImage:
         # Convert polar coordinates (angle, speed) to Cartesian coordinates (x, y)
         velocities = speeds[::, np.newaxis] * np.stack((np.cos(angles), np.sin(angles)), axis=1)
 
+        # Center velocities about 0 so rotated and non rotated plots appear consistent
+        velocities = velocities - velocities.mean(axis=0, keepdims=True)
+        speeds = np.sqrt(velocities[:, 1] ** 2 + velocities[:, 0] ** 2)
+        angles = np.arctan2(velocities[:, 1], velocities[:, 0])
+
         # Initialize PCA and fit it to the velocities
         pca = PCA()
         score = pca.fit_transform(velocities)
