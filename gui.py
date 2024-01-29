@@ -1,8 +1,11 @@
 # Importing required modules for GUI and image processing
-from tkinter import Canvas, Toplevel, Checkbutton, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
+from tkinter import (Canvas, Toplevel, Checkbutton, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
     , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox, BooleanVar, StringVar
+, OptionMenu)
 from PIL import Image, ImageTk
 from queue import Queue
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib import pyplot as plt
 import numpy as np
 import cv2
 import os
@@ -10,8 +13,9 @@ import pandas as pd
 import threading
 import webbrowser
 
+from constants import *
 from binarize import BinarizedImage
-from quantify_image_set import analysis_logic
+from quantify_image_set import analysis_logic, plot_moment_of_inertia
 
 
 def create_tooltip(widget, text):
@@ -46,7 +50,7 @@ def update_label_wrap(label, frame):
             label.configure(wraplength=new_width)
 
 
-def open_help_window(master_window, label_str):
+def open_popup_window(master_window, label_str):
     help_window = Toplevel(master_window)
     help_window.title("Help")
 
@@ -71,12 +75,42 @@ def open_folder_in_explorer(folder_path):
         # Open the folder in the default file explorer
         webbrowser.open(f'file://{folder_path}')
 
+def is_float_input(P):
+    # Function to test if input is a valid float
+    if P == "":
+        return True
+    try:
+        float(P)
+        return True
+    except ValueError:
+        return False
+
+def is_valid_font_size(P):
+    # Function to test if input is a valid font size
+    if P.isdigit():
+        return 1 <= int(P) <= 128
+    return P == ""
+
+def is_valid_tick_size(P):
+    # Function to test if input is a valid font size
+    if P.isdigit():
+        return 6 <= int(P) <= 20
+    return P == ""
+
 
 class MainMenu:
 
     def __init__(self, master):
         self.master = master
         self.summary_file_list = []
+
+        self.preview_window = None  # This will hold the reference to the preview window
+        self.fig = None
+        self.time_unit_var = StringVar(value='day')  # StringVar to hold the time unit value
+        self.pixel_scale_var = StringVar(value='1')  # StringVar to hold the time unit value
+        self.font_var = StringVar(value=FONTS[ARIAL_IND])  # Default value
+        self.font_size_var = StringVar(value='12')  # Default font size
+        self.tick_size_var = StringVar(value='11')  # Default font size
 
         self.instructions_label = None
 
@@ -106,13 +140,11 @@ class MainMenu:
         self.process_button = Button(self.frame, text="Consolidate", command=self.open_concat_window)
         self.process_button.pack()  # You will need to adjust the positioning according to your layout
 
-        self.time_unit_var = StringVar(value='day')  # StringVar to hold the time unit value
-        Label(self.frame, text="Time Unit:").pack()  # Label for the text box
-        self.time_unit_entry = Entry(self.frame, textvariable=self.time_unit_var)  # Text box for time unit
-        self.time_unit_entry.pack()  # Pack the text box into the frame
+        self.settings_button = Button(self.frame, text="Settings", command=self.open_settings_window)
+        self.settings_button.pack()  # Adjust the positioning according to your layout
 
         # Add a Help button
-        self.help_button = Button(self.frame, text="Help", command=lambda: open_help_window(self.master, "File Naming Instructions:\n"
+        self.help_button = Button(self.frame, text="Help", command=lambda: open_popup_window(self.master, "File Naming Instructions:\n"
                                 "Image file names should begin with an integer number followed"
                                 " by '_'. The number denotes which spheroid an image belongs to."
                                 " So all time points of the same spheroid should share the same"
@@ -124,13 +156,90 @@ class MainMenu:
                                 "To return to the main window from a sub window close the subwindow with the x"))
         self.help_button.pack()  # Adjust the positioning according to your layout
 
+    def open_settings_window(self):
+        settings_window = Toplevel(self.master)
+        settings_window.title("Settings")
+        pad_size = 5
+
+        # Plot Settings Label
+        Label(settings_window, text="Dimensional Settings", font=("Arial", 14)).pack(pady=(pad_size, 0))
+
+        Label(settings_window, text="Time Unit:").pack(pady=(pad_size, 0))  # Label for the text box
+        self.time_unit_entry = Entry(settings_window, textvariable=self.time_unit_var)  # Text box for time unit
+        self.time_unit_entry.pack(pady=(0, pad_size))  # Pack the text box into the frame
+
+        float_vcmd = (self.master.register(is_float_input), '%P')
+        Label(settings_window, text="Pixel Scale (µm/pixel):").pack(pady=(pad_size, 0))  # Label for the text box
+        self.pixel_scale_entry = Entry(settings_window, textvariable=self.pixel_scale_var
+                                       , validate="key", validatecommand=float_vcmd)  # Text box for time unit
+        self.pixel_scale_entry.pack(pady=(0, pad_size))  # Pack the text box into the frame
+
+        # Plot Settings Label
+        Label(settings_window, text="Plot Settings", font=("Arial", 14)).pack(pady=(2 * pad_size, 0))
+
+        Label(settings_window, text="Font:").pack(pady=(pad_size, 0))
+        self.font_menu = ttk.Combobox(settings_window, textvariable=self.font_var, values=FONTS, state='readonly')
+        self.font_menu.pack(pady=(0, pad_size))
+
+        font_size_vcmd = (self.master.register(is_valid_font_size), '%P')
+        Label(settings_window, text="Font Size:").pack(pady=(pad_size, 0))
+        self.font_size_combobox = ttk.Combobox(settings_window, textvariable=self.font_size_var, values=FONT_SIZES
+                                               , validate="key", validatecommand=font_size_vcmd)
+        self.font_size_combobox.pack(pady=(0, pad_size))
+
+        tick_size_vcmd = (self.master.register(is_valid_tick_size), '%P')
+        Label(settings_window, text="Tick Size:").pack(pady=(pad_size, 0))
+        self.tick_size_var_combobox = ttk.Combobox(settings_window, textvariable=self.tick_size_var, values=TICK_SIZES
+                                                   , validate="key", validatecommand=tick_size_vcmd)
+        self.tick_size_var_combobox.pack(pady=(0, pad_size))
+
+        self.preview_button = Button(settings_window, text="Preview Plot Format", command=self.preview_plot)
+        self.preview_button.pack(pady=(pad_size, pad_size))
+
     def open_concat_window(self):
             self.concat_ap.open_consolidate_window(self.analyze_ap.summary_files)
 
     def run_analysis(self):
-        time_unit = self.time_unit_var.get()  # Retrieve the value from the text box
+        time_unit = self.time_unit_var.get()
+        pixel_scale = float(self.pixel_scale_var.get())
+        font_name = self.font_var.get()
+        font_size = int(self.font_size_var.get())
+        font_spec = {'fontname': font_name, 'size': font_size}
+        tick_size = int(self.tick_size_var.get())
         pattern = rf'{time_unit}(\d+)'
-        self.analyze_ap.open_analyze_window(pattern, time_unit)
+        self.analyze_ap.open_analyze_window(pattern, time_unit, pixel_scale, font_spec, tick_size)
+
+    def preview_plot(self):
+        def on_close_preview():
+            if self.preview_window is not None:
+                self.preview_window.destroy()
+                self.preview_window = None
+
+            if self.fig is not None:
+                plt.close(self.fig)
+                self.fig = None
+
+
+        # Create a new preview window
+        on_close_preview()
+
+        self.preview_window = Toplevel(self.master)
+        self.preview_window.title("Preview")
+        self.preview_window.protocol("WM_DELETE_WINDOW", on_close_preview)
+
+        font_name = self.font_var.get()
+        font_size = int(self.font_size_var.get())
+        font_spec = {'fontname': font_name, 'size': font_size}
+
+        tick_size = int(self.tick_size_var.get())
+
+        self.fig = plot_moment_of_inertia('Example', EXAMPLE_MOMENTS, font_spec, tick_size)
+
+        # Embed the plot in the new preview window
+        canvas = FigureCanvasTkAgg(self.fig, master=self.preview_window)
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack()
+        canvas.draw()
 
 
 
@@ -139,10 +248,12 @@ class MainMenu:
 class ImageBinarizationApp:
     def __init__(self, master):
         self.master = master
+        self.image_thresholds = {}  # Store the threshold for each image
 
         # Image display labels
         self.original_image_label = None
         self.binarized_image_label = None
+        self.image_info_label = None
 
         # Paths
         self.image_folder_path = ""
@@ -239,9 +350,23 @@ class ImageBinarizationApp:
         self.reset_view()
 
         # Save the initial image and reset the image state history
+        stored_threshold = self.image_thresholds.get(image_name, self.recent_threshold)
+
+        # Delete points drawn on the prior image
+        self.delete_points()
+
+        if self.local_thresh_scale:
+            self.local_thresh_scale.set(stored_threshold)
+
+        if image_name not in self.image_thresholds.keys():
+            self.update_threshold(stored_threshold)
+
         self.image_states = []
         self.current_state_index = -1
         self.save_state()
+
+        if self.image_info_label:
+            self.image_info_label.config(text=f"On image {self.image_index + 1} of {len(self.image_list)}")
 
     def save_state(self):
         # Save the current binary array as a state
@@ -255,6 +380,8 @@ class ImageBinarizationApp:
     def save_binarized_images(self):
         for img_name, img in self.preloaded_images.items():
             img.save_binarized_image()
+
+        open_popup_window(self.binarize_window, f"Images saved to \n{self.save_folder_path}")
 
     def update_threshold(self, val):
         threshold_value = int(val)
@@ -274,6 +401,11 @@ class ImageBinarizationApp:
             self.local_threshold = threshold_value
             self.current_image.update_mask(threshold_value)
             self.update_canvas()
+
+            # Store the updated threshold value for the current image
+            if self.current_image:
+                image_name = self.image_list[self.image_index]
+                self.image_thresholds[image_name] = threshold_value
 
     def start_drawing(self, event):
         # Get the width and height of the right canvas
@@ -345,9 +477,6 @@ class ImageBinarizationApp:
             messagebox.showinfo("Info", "Please draw a boundary on the image to delete a region.")
 
     def navigate_images(self, direction):
-        # TODO when pulling up an image automatically set the slider to its threshold. This requires storing the
-        #  threshold for each image as you change. Initially this should be none (in which case it takes on the last
-        #  threshold used as a default)
         # Navigate to the next or previous image based on the direction
         if direction == 'next' and self.image_index < len(self.image_list) - 1:
             self.image_index += 1
@@ -358,9 +487,6 @@ class ImageBinarizationApp:
         self.load_image(self.image_list[self.image_index])
         self.update_canvas()
 
-        # Bring the modify pane to front if it's open
-        if self.modify_pane and self.modify_pane.winfo_exists():
-            self.modify_pane.lift()
 
     def skip_to_image(self, image_number):
         # Skip to a specific image number
@@ -550,25 +676,28 @@ class ImageBinarizationApp:
         button_frame.pack(side='bottom', fill='x')
 
         # Modify button frame
-        modify_frame = Frame(self.binarize_window)
-        modify_frame.pack(side='right', fill='y')
+        navigate_frame = Frame(self.binarize_window)
+        navigate_frame.pack(side='right', fill='y')
 
         # Zoom In and Zoom Out buttons
         self.reset_view_button = Button(self.image_frame, text="Reset View", command=self.reset_view)
         self.reset_view_button.pack(side='left')
 
-        # # Modify button
-        # self.modify_button = Button(modify_frame, text="Modify", command=self.open_modify_pane)
-        # self.modify_button.pack()
-
-        self.prev_button = Button(modify_frame, text="<< Prev", command=lambda: self.navigate_images('prev'))
+        self.prev_button = Button(navigate_frame, text="<< Prev", command=lambda: self.navigate_images('prev'))
         self.prev_button.pack(side='left', padx=10)
 
-        self.next_button = Button(modify_frame, text="Next >>", command=lambda: self.navigate_images('next'))
+        self.next_button = Button(navigate_frame, text="Next >>", command=lambda: self.navigate_images('next'))
         self.next_button.pack(side='left', padx=10)
 
-        self.save_button = Button(modify_frame, text="Save", command=self.save_binarized_images)
+        self.save_button = Button(navigate_frame, text="Save", command=self.save_binarized_images)
         self.save_button.pack(side='left', padx=10)
+
+        self.back_button = Button(navigate_frame, text="Back", command=self.on_close_binarize_window)
+        self.back_button.pack(side='left', padx=10)
+
+        self.image_info_label = Label(navigate_frame, text=f"On image 0 of {len(self.image_list)}")
+        self.image_info_label.pack(side='bottom', padx=10)
+
 
         # If there are images in the folder, load the first one
         if self.image_list:
@@ -625,9 +754,8 @@ class ImageBinarizationApp:
             "- Auto clean to remove pixels not in the largest boundary found by auto boundary.")
 
         self.help_button = Button(modify_frame, text="Help",
-                                  command=lambda: open_help_window(self.binarize_window, help_txt))
+                                  command=lambda: open_popup_window(self.binarize_window, help_txt))
         self.help_button.grid(row=0, column=5, padx=10)
-
     def toggle_draw_mode(self):
         self.draw_var = not self.draw_var
         if self.draw_var:
@@ -670,6 +798,8 @@ class ImageBinarizationApp:
         self.prev_button = None
         self.next_button = None
         self.save_button = None
+
+        self.image_thresholds = {}  # Store the threshold for each image
 
         # Show the main window again
         self.master.deiconify()
@@ -786,8 +916,11 @@ class SpheroidAnalysisApp:
         self.id_dict_keys = ['experiment #']
         self.time_regex = 'day'
         self.time_unit = 'day'
+        self.pixel_scale = 1
+        self.font_spec = FONT_SPEC
+        self.tick_size = 11
 
-    def open_analyze_window(self, time_regex, time_unit):
+    def open_analyze_window(self, time_regex, time_unit, pixel_scale, font_spec, tick_size):
         # Hide the main window
         self.root.withdraw()
 
@@ -796,6 +929,9 @@ class SpheroidAnalysisApp:
 
         self.time_regex = time_regex
         self.time_unit = time_unit
+        self.pixel_scale = pixel_scale
+        self.font_spec = font_spec
+        self.tick_size = tick_size
 
         # Create the binarize window
         self.analyze_window = Toplevel()
@@ -807,6 +943,8 @@ class SpheroidAnalysisApp:
         self.folder_label.grid(row=0, column=0, sticky='w')
         self.folder_button = Button(self.analyze_window, text="Browse", command=self.select_folder)
         self.folder_button.grid(row=0, column=1)
+        create_tooltip(self.folder_button,
+                       "Select the folder containing either\nthe masked or unmasked images")
 
         # Label for optional metadata
         self.metadata_label = Label(self.analyze_window, text="Enter Optional Metadata:")
@@ -822,6 +960,9 @@ class SpheroidAnalysisApp:
         self.run_button = Button(self.analyze_window, text="Run Analysis", command=self.run_analysis)
         self.run_button.grid(row=4, column=0, columnspan=2)
         self.run_button['state'] = DISABLED
+
+        self.back_button = Button(self.analyze_window, text="Back", command=self.on_close_analyze_window)
+        self.back_button.grid(row=5, column=0, columnspan=2, pady=(1, 0))
 
         # Checkbox for saving to PDF
         # Currently the PDF saving method has issues so it's disabled for now
@@ -938,7 +1079,7 @@ class SpheroidAnalysisApp:
         # Update this line in the analysis_logic method
         save_to_pdf = False # self.save_to_pdf_var.get()
         summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, self.time_regex
-                                           , self.time_unit, save_images_to_pdf=save_to_pdf)
+                                           , self.time_unit, self.pixel_scale, self.font_spec, self.tick_size, save_images_to_pdf=save_to_pdf)
         self.summary_files.append(summary_file_path)
 
         # Complete the progress bar
@@ -1014,12 +1155,18 @@ class CSVConcatenatorApp:
         # Create and place buttons in the left frame
         self.select_button = Button(left_frame, text="Select CSV Files", command=self.select_files)
         self.select_button.pack(fill='x')
+        create_tooltip(self.select_button, "Select the file 'overall_summary.csv' saved in each analysis folder\nafter running the analysis")
 
         self.remove_button = Button(left_frame, text="Remove files", command=self.remove_selected_files)
         self.remove_button.pack(fill='x')
 
         self.concatenate_button = Button(left_frame, text="Concatenate Files", command=self.concatenate_files)
         self.concatenate_button.pack(fill='x')
+        create_tooltip(self.concatenate_button,
+                       "Concatenate selected csv files")
+
+        self.back_button = Button(left_frame, text="Back", command=self.on_close_consolidate_window)
+        self.back_button.pack(fill='x')
 
         # Create a label and listbox in the right frame
         label = Label(right_frame, text="Files to concatenate")
@@ -1027,6 +1174,7 @@ class CSVConcatenatorApp:
 
         self.listbox = Listbox(right_frame, width=50, height=10)
         self.listbox.pack(fill='both', expand=True)
+
 
         self.update_initial_file_paths()
 
@@ -1065,9 +1213,8 @@ class CSVConcatenatorApp:
             self.listbox.insert(END, display_text)
 
     def concatenate_files(self):
-        # TODO change the printout statements so that they appear in a popup
         if not self.file_paths:
-            open_help_window(self.consolidate_window, "No files selected to concatenate.")
+            open_popup_window(self.consolidate_window, "No files selected to concatenate.")
             return
 
         # Read and concatenate all selected CSV files
@@ -1079,9 +1226,9 @@ class CSVConcatenatorApp:
                                                  filetypes=[("CSV Files", "*.csv")])
         if save_path:
             concatenated_df.to_csv(save_path, index=False)
-            open_help_window(self.consolidate_window, f"Concatenated CSV saved as\n{save_path}")
+            open_popup_window(self.consolidate_window, f"Concatenated CSV saved as\n{save_path}")
         else:
-            open_help_window(self.consolidate_window, "No save folder selected.")
+            open_popup_window(self.consolidate_window, "No save folder selected.")
 
 def main():
     # Create the main window (root of the Tk interface)

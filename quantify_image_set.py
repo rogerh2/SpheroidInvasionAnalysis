@@ -17,9 +17,10 @@ from queue import Queue
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-FONT_SPEC = {'fontname': 'Arial',
-         'size'    : 22}
-
+def safe_for_divide(x, eps=1e-8):
+    x_sign = np.sign(x)
+    x_sign[x_sign == 0] = 1
+    return x_sign * np.clip(np.abs(x), eps, np.inf)
 
 
 class SpheroidImage:
@@ -29,6 +30,9 @@ class SpheroidImage:
     Args:
         fpath (str): The file path to the spheroid image.
         kill_Q (queue.Queue): A queue to send a kill signal to end the analysis early if desired
+        time_unit (str): The unit of time used for the images
+        font_spec (dict): A dictionary defining the font size and font name for plot lables and title
+        tick_size (int): A parameter controlling the size of the x and y lables / ticks
 
     Attributes:
         boundary (array): The boundary coordinates of the largest spheroid in the image
@@ -38,7 +42,7 @@ class SpheroidImage:
         y_coords (array): The y coordinates of every pixel in img_array
     """
 
-    def __init__(self, fpath, kill_Q: Queue, time_unit):
+    def __init__(self, fpath, kill_Q: Queue, time_unit, font_spec, tick_size):
         source_image = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)
 
         # Find contours in the source image
@@ -65,6 +69,8 @@ class SpheroidImage:
 
         # Create meshgrid of coordinates
         self.x_coords, self.y_coords = np.meshgrid(y_range, x_range)
+        self.font_spec = font_spec
+        self.tick_size = tick_size
 
     def center_boundary(self, boundary, boundary_centroid):
         """
@@ -167,7 +173,7 @@ class SpheroidImage:
             y1_reshaped = np.tile(y1, (M, 1))  # shape M, N
 
             # Define slopes
-            m = y1_reshaped / (x1_reshaped + 1e-8) # shape M, N
+            m = y1_reshaped / safe_for_divide(x1_reshaped) # shape M, N
 
             # Calculate the minimum distance from each boundary point to each line
             x_min = (xb_reshaped + m * yb_reshaped) / (1 + m ** 2)  # shape M, N
@@ -180,11 +186,12 @@ class SpheroidImage:
             #  - not nearest the POI
             perp_x1 = 1
             perp_x2 = -1
-            perp_y1 = (-1 / (m + 1e-8))
-            perp_y2 = (1 / (m + 1e-8))
+            perp_y1 = (-1 / safe_for_divide(m))
+            perp_y2 = (1 / safe_for_divide(m))
             perp_valb = (xb_reshaped - perp_x1) * (perp_y2 - perp_y1) - (yb_reshaped - perp_y1) * (perp_x2 - perp_x1)
             perp_val_locs = (x1_reshaped - perp_x1) * (perp_y2 - perp_y1) - (y1_reshaped - perp_y1) * (perp_x2 - perp_x1)
-            perp_mask = np.not_equal((perp_valb / np.abs(perp_valb)),  (perp_val_locs / np.abs(perp_val_locs)))
+
+            perp_mask = np.not_equal((perp_valb / safe_for_divide(np.abs(perp_valb))),  (perp_val_locs / safe_for_divide(np.abs(perp_val_locs))))
 
             # - Part 2: Filters out parts of boundary that are overlapping/ further from
             # - the centroid than the POI
@@ -266,14 +273,12 @@ class SpheroidImage:
         fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
         ax.scatter(angles, speeds, marker='.', s=1)
 
-        ax.set_title('Persistence speed (um/min) vs migration angle', **FONT_SPEC)
+        ax.set_title(f'Persistence speed (µm/{self.time_unit}) vs migration angle', **self.font_spec)
+        plt.gca().tick_params(labelsize=self.tick_size)
 
         # Annotate plot with PCA information
         principle_angles_str = ', '.join(map(str, principle_angles))
         principle_speeds_str = ', '.join(map(str, principle_speeds))
-        ann_str = [f'Principle angle: ({principle_angles_str})',
-                   f'Mean principle speed: ({principle_speeds_str})']
-        print('\n'.join(ann_str))#, xy=(0.5, -0.1), xycoords='axes fraction', fontsize=14)
 
         # Plot principal angles
         # Creating arrays for plotting lines representing principal angles
@@ -289,13 +294,14 @@ class SpheroidImage:
         if save_images_to_pdf:
             pdf_pages.savefig()
         else:
-            plt.savefig(os.path.join(save_fldr_path, f'{self.time_unit}{t}_img-h_speed_vs_angle_with_principle_components.png'))
+            plt.savefig(os.path.join(save_fldr_path, f'{self.time_unit}{t}_img-i_speed_vs_angle_with_principle_components.png'))
         plt.close()
 
         # Plot transformed data
         fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
         ax.scatter(transformed_angles, transformed_speeds, marker='.', s=1)
-        ax.set_title('Transformed persistence speed (um/min) vs migration angle', **FONT_SPEC)
+        ax.set_title(f'Transformed persistence speed (µm/{self.time_unit}) vs migration angle', **self.font_spec)
+        plt.gca().tick_params(labelsize=self.tick_size)
 
         # Plot principal axes on the transformed data plot
         a3, s3 = np.deg2rad([0, 0]), [0, max(speeds)]
@@ -312,7 +318,7 @@ class SpheroidImage:
         if save_images_to_pdf:
             pdf_pages.savefig()
         else:
-            plt.savefig(os.path.join(save_fldr_path, f'{self.time_unit}{t}_img-i_principle_coordinates_speed_vs_angle.png'))
+            plt.savefig(os.path.join(save_fldr_path, f'{self.time_unit}{t}_img-j_principle_coordinates_speed_vs_angle.png'))
         plt.close()
 
         # Calculate the difference between principal speeds
@@ -375,6 +381,10 @@ class QuantSpheroidSet:
         image_fpaths (list): A list of file paths for the images.
         pattern (str): The regular expression that yields the time unit from the file name
         kill_Q (queue.Queue): A queue to send a kill signal to end the analysis early if desired
+        time_unit (str): The unit of time used for the images
+        pixel_size (float): The scale in micron / pixel for the microscope pixel_size
+        font_spec (dict): A dictionary defining the font size and font name for plot lables and title
+        tick_size (int): A parameter controlling the size of the x and y lables / ticks
         save_path (str, optional): The path where outputs should be saved. If None, uses the
                                    directory of the first image.
 
@@ -385,7 +395,7 @@ class QuantSpheroidSet:
         save_fldr_path (str): Path to the folder where outputs will be saved.
     """
 
-    def __init__(self, image_fpaths, pattern, kill_Q: Queue, time_unit: str, save_path=None):
+    def __init__(self, image_fpaths, pattern, kill_Q: Queue, time_unit: str, pixel_size, font_spec, tick_size, save_path=None):
         # Extracting time information from the image filenames
         sample_times = np.array([int(re.search(pattern, os.path.basename(filename)).group(1))
                         for filename in image_fpaths if re.search(pattern, filename)])
@@ -394,11 +404,14 @@ class QuantSpheroidSet:
         # Sorting the times and paths based on the extracted times
         self.times = np.sort(sample_times)
         self.paths = array_paths[sample_times.argsort()]
+        self.pixel_size = pixel_size
 
         # Loading images as SpheroidImage objects
-        self.images = [SpheroidImage(fpath, kill_Q, time_unit) for fpath in self.paths]
+        self.images = [SpheroidImage(fpath, kill_Q, time_unit, font_spec, tick_size) for fpath in self.paths]
         self.line_width = 1
         self.marker_size = 10
+        self.font_spec = font_spec
+        self.tick_size = tick_size
 
         # If no explicit save path save in the same directory as the images
         if save_path is None:
@@ -438,7 +451,8 @@ class QuantSpheroidSet:
         plt.imshow(self.images[0].img_array, cmap='gray')
         plt.plot(init_bound[:, 0], init_bound[:, 1], color='limegreen',
                  linewidth=self.line_width)  # Plot boundary in green
-        plt.title('Binarized Image with Initial Boundary', **FONT_SPEC)
+        plt.title('Binarized Image with Initial Boundary', **self.font_spec)
+        plt.gca().tick_params(labelsize=self.tick_size)
 
         if save_images_to_pdf:
             pdf_pages.savefig()
@@ -448,7 +462,8 @@ class QuantSpheroidSet:
         plt.figure()
         plt.imshow(self.images[0].img_array, cmap='gray')
         plt.scatter(boundary_centroid[0], boundary_centroid[1], color='blue', marker='*', s=self.marker_size)
-        plt.title('Initial Image with Boundary Centroid', **FONT_SPEC)
+        plt.title('Initial Image with Boundary Centroid', **self.font_spec)
+        plt.gca().tick_params(labelsize=self.tick_size)
 
         if save_images_to_pdf:
             pdf_pages.savefig()
@@ -467,6 +482,7 @@ class QuantSpheroidSet:
         # Iterating over images (excluding the first) to calculate metrics
         for i, img in enumerate(self.images[1:], start=1):
             centered_boundary = img.center_boundary(init_bound, boundary_centroid)
+            t = self.times[i]
             dist, inds, coor, boundary_coor, kill_sig = img.intersection_distance(centered_boundary)
             if kill_sig:
                 break
@@ -475,12 +491,13 @@ class QuantSpheroidSet:
             plt.figure()
             plt.imshow(img.img_array, cmap='gray')
             plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*', s=self.marker_size)
-            plt.title(f'{self.time_str}{i}: Boundary Centroid', **FONT_SPEC)
+            plt.title(f'{self.time_str}{t}: Boundary Centroid', **self.font_spec)
+            plt.gca().tick_params(labelsize=self.tick_size)
 
             if save_images_to_pdf:
                 pdf_pages.savefig()
             else:
-                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{i}_img-c_binarized_with_boundary.png'))
+                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{t}_img-c_binarized_with_boundary.png'))
             plt.close()
 
             # Plot img.img_array with init_bound and centroids
@@ -491,11 +508,12 @@ class QuantSpheroidSet:
                         s=self.marker_size)  # Green star for boundary_centroid
             plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*',
                         s=self.marker_size)  # Blue star for img.centroid
-            plt.title(f'{self.time_str}{i}: Uncentered boundary', **FONT_SPEC)
+            plt.title(f'{self.time_str}{t}: Uncentered boundary', **self.font_spec)
+            plt.gca().tick_params(labelsize=self.tick_size)
             if save_images_to_pdf:
                 pdf_pages.savefig()
             else:
-                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{i}_img-d_uncentered_boundary.png'))
+                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{t}_img-d_uncentered_boundary.png'))
             plt.close()
 
             # Plot img.img_array with centered_boundary
@@ -504,11 +522,12 @@ class QuantSpheroidSet:
             plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='limegreen', linewidth=self.line_width)
             plt.scatter(img.centroid[0], img.centroid[1], color='blue', marker='*',
                         s=self.marker_size)  # Blue star for img.centroid
-            plt.title(f'{self.time_str}{i}: Centered boundary', **FONT_SPEC)
+            plt.title(f'{self.time_str}{t}: Centered boundary', **self.font_spec)
+            plt.gca().tick_params(labelsize=self.tick_size)
             if save_images_to_pdf:
                 pdf_pages.savefig()
             else:
-                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{i}_img-e_centered_boundary.png'))
+                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{t}_img-e_centered_boundary.png'))
             plt.close()
 
             # Plot img.img_array with points in coor + img.centroid
@@ -519,11 +538,12 @@ class QuantSpheroidSet:
                         s=1)
             plt.scatter(img.centroid[0], img.centroid[1], color='limegreen', marker='*',
                         s=self.marker_size)  # Blue star for img.centroid
-            plt.title(f'{self.time_str}{i}: Centered boundary and outer pixels', **FONT_SPEC)
+            plt.title(f'{self.time_str}{t}: Centered boundary and outer pixels', **self.font_spec)
+            plt.gca().tick_params(labelsize=self.tick_size)
             if save_images_to_pdf:
                 pdf_pages.savefig()
             else:
-                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{i}_img-f_centered_boundary_outer_pixels.png'))
+                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{t}_img-f_centered_boundary_outer_pixels.png'))
             plt.close()
 
             # Plot img.img_array with init_bound and lines between random points
@@ -541,11 +561,12 @@ class QuantSpheroidSet:
                         s=self.marker_size)  # Blue star for img.centroid
             plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='blue', linewidth=self.line_width)
             plt.axhline(y=img.centroid[1], color='gray', linestyle='--')
-            plt.title(f'{self.time_str}{i}: Distance from boundary', **FONT_SPEC)
+            plt.title(f'{self.time_str}{t}: Distance from boundary', **self.font_spec)
+            plt.gca().tick_params(labelsize=self.tick_size)
             if save_images_to_pdf:
                 pdf_pages.savefig()
             else:
-                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{i}_distance_from_boundary.png'))
+                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{t}_distance_from_boundary.png'))
             plt.close()
 
             plt.figure()
@@ -559,11 +580,12 @@ class QuantSpheroidSet:
 
             plt.scatter(img.centroid[0], img.centroid[1], color='limegreen', marker='*',
                         s=self.marker_size, zorder=N + 10)  # Green star for img.centroid
-            plt.title(f'{self.time_str}{i}: Distance from centroid', **FONT_SPEC)
+            plt.title(f'{self.time_str}{t}: Distance from centroid', **self.font_spec)
+            plt.gca().tick_params(labelsize=self.tick_size)
             if save_images_to_pdf:
                 pdf_pages.savefig()
             else:
-                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{i}_img-g_distance_from_centroid.png'))
+                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{t}_img-g_distance_from_centroid.png'))
             plt.close()
 
             plt.figure()
@@ -598,19 +620,20 @@ class QuantSpheroidSet:
             plt.plot(centered_boundary[:, 0], centered_boundary[:, 1], color='limegreen', linewidth=self.line_width)
 
             angle_deg = (np.rad2deg(angles_rad_for_labels).astype(int) + 360) % 360
-            labels = [f'{self.time_str}{i}: {a}°' for a in angle_deg]
+            labels = [f'{self.time_str}{t}: {a}°' for a in angle_deg]
             plt.legend(labels, loc='upper right')
-            plt.title(f'{self.time_str}{i}: Angles of migration', **FONT_SPEC)
+            plt.title(f'{self.time_str}{t}: Angles of migration', **self.font_spec)
+            plt.gca().tick_params(labelsize=self.tick_size)
             if save_images_to_pdf:
                 pdf_pages.savefig()
             else:
-                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{i}_img-h_angles_of_migration.png'))
+                plt.savefig(os.path.join(save_fldr, f'{self.time_str}{t}_img-h_angles_of_migration.png'))
             plt.close()
 
-            distances.append(dist)
+            distances.append(dist * self.pixel_size)
             indices.append(inds)
-            coordinates.append(coor)
-            outer_coordinates.append(coor - boundary_coor)
+            coordinates.append(coor * self.pixel_size)
+            outer_coordinates.append((coor - boundary_coor) * self.pixel_size)
             angles_ls.append(angles)
             times.append(img)
 
@@ -618,18 +641,27 @@ class QuantSpheroidSet:
         if save_images_to_pdf:
             pdf_pages.close()
 
-        # Convert lists to numpy arrays
-        distances = np.asarray(distances)
-        indices = np.asarray(indices)
-        coordinates = np.asarray(coordinates)
-        angles_ls = np.asarray(angles_ls)
-        outer_coordinates = np.asarray(outer_coordinates)
-
         return distances, indices, coordinates, angles_ls, outer_coordinates, kill_sig
 
 
+def plot_moment_of_inertia(title, moments, font_spec, tick_size):
+    categories = ['Ir', 'Ix', 'Iy']
+    fig = plt.figure()
+    bars = plt.bar(categories, moments)
+    plt.title(title, **font_spec)
+    plt.ylabel('Moment (pixels^4)', **font_spec)
+    plt.gca().tick_params(labelsize=tick_size)
+
+    # Adding values on top of the bars
+    for bar, value in zip(bars, moments):
+        plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{value:.2e}',
+                 ha='center', va='bottom')
+
+    return fig
+
+
 def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles_array, outer_distances_xy, centerdistance_lengths,
-                                    full_distances_xy, num_days, pixel_size, save_images_to_pdf, time_unit):
+                                    full_distances_xy, num_days, pixel_size, save_images_to_pdf, time_unit, font_spec, tick_size):
     """
     Plots distance histograms, cumulative distance histograms, angles histograms, representative distance
     values, and speed vs angle graphs. It also calculates and plots the moment of inertia from the boundary and center
@@ -647,6 +679,8 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
         pixel_size (float): The size of a pixel in meters.
         save_images_to_pdf (bool): A boolean determining whether to save data as images in a folder or inside a pdf
         time_unit (str): A string denoting the unit of time used in the measurements
+        font_spec (dict): A dictionary defining the font size and font name for plot lables and title
+        tick_size (int): The size parameter for the x and y lables / ticks
 
     Returns:
         tuple: A tuple containing moments of inertia from the boundary (Irb, Ixb, Iyb),
@@ -664,9 +698,10 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     plt.subplot(2, 1, 1)  # 2 rows, 1 column, 1st subplot
 
     h1, bins, _ = plt.hist(outerdistance_lengths, bins=20, rwidth=0.8)  # Histogram with 20 bins
-    plt.title('Distances from boundary histogram', **FONT_SPEC)
-    plt.xlabel('distance (pixels)', **FONT_SPEC)
-    plt.ylabel('frequency', **FONT_SPEC)
+    plt.title('Distances from boundary histogram', **font_spec)
+    plt.xlabel('distance (µm)', **font_spec)
+    plt.ylabel('frequency', **font_spec)
+    plt.gca().tick_params(labelsize=tick_size)
 
     # get the current x limits
     x_min, x_max = plt.xlim()
@@ -675,9 +710,10 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     plt.subplot(2, 1, 2)  # 2 rows, 1 column, 2nd subplot
     cumDistValues = np.cumsum(h1)  # Cumulative sum of the histogram values
     plt.bar((bins[1::] + bins[0:-1]) / 2, cumDistValues, width=0.8 * (bins[1::] - bins[0:-1]))  # Bar plot
-    plt.title('Cumulative distances from boundary histogram')
-    plt.xlabel('distance (pixels)', **FONT_SPEC)
-    plt.ylabel('frequency', **FONT_SPEC)
+    plt.title('Cumulative distances from boundary histogram', **font_spec)
+    plt.xlabel('distance (µm)', **font_spec)
+    plt.ylabel('frequency', **font_spec)
+    plt.gca().tick_params(labelsize=tick_size)
 
     # Set the x limits of the two subplots to the same value
     x_min, x_max = bins[0], bins[-1]
@@ -686,7 +722,7 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     if save_images_to_pdf:
         pdf_pages.savefig()
     else:
-        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-j_img-h_distances_histogram.png'))  # Save the figure
+        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-k_img-h_distances_histogram.png'))  # Save the figure
     plt.close()
 
     # Assuming 'angles' is a list of numpy arrays or lists
@@ -696,11 +732,12 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     plt.figure()
     ax = plt.subplot(111, polar=True)  # Create a polar subplot
     ax.hist(angles_array, bins=20, rwidth=0.9)  # Polar histogram with 20 bins
-    plt.title('Angles histogram', **FONT_SPEC)
+    plt.title('Angles histogram', **font_spec)
+    plt.gca().tick_params(labelsize=tick_size)
     if save_images_to_pdf:
         pdf_pages.savefig()
     else:
-        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-k_angles_histogram.png'))
+        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-l_angles_histogram.png'))
     plt.close()
 
     max_dist = np.max(outerdistance_lengths)
@@ -714,8 +751,9 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     plt.figure()
     bars = plt.bar(categories, values)
 
-    plt.title('Representative distance values from the boundary', **FONT_SPEC)
-    plt.ylabel('distance (pixels)')
+    plt.title('Representative distance values from the boundary', **font_spec)
+    plt.ylabel('distance (µm)', **font_spec)
+    plt.gca().tick_params(labelsize=tick_size)
 
     # Adding values on top of the bars
     for bar, value in zip(bars, values):
@@ -725,44 +763,47 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     if save_images_to_pdf:
         pdf_pages.savefig()
     else:
-        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-l_representative_distances.png'))
+        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-m_representative_distances.png'))
     plt.close()
 
     plt.figure()
     ax1 = plt.subplot(111, polar=True)
     ax1.scatter(angles_array, centerdistance_lengths, marker='.', s=1)
-    plt.title("Distances from center (pixels) vs angle", **FONT_SPEC)
+    plt.title("Distances from center (µm) vs angle", **font_spec)
+    plt.gca().tick_params(labelsize=tick_size)
     if save_images_to_pdf:
         pdf_pages.savefig()
     else:
-        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-m_distances_vs_angle_center.png'))
+        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-n_distances_vs_angle_center.png'))
     plt.close()
 
     # Plot the boundary distance vs angle values in a polar plot
     plt.figure()
     ax2 = plt.subplot(111, polar=True)
     ax2.scatter(angles_array, outerdistance_lengths, marker='.', s=1)
-    plt.title("Distances from boundary (pixels) vs angle", **FONT_SPEC)
+    plt.title("Distances from boundary (µm) vs angle", **font_spec)
+    plt.gca().tick_params(labelsize=tick_size)
     if save_images_to_pdf:
         pdf_pages.savefig()
     else:
-        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-n_distances_vs_angle_boundary.png'))
+        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-o_distances_vs_angle_boundary.png'))
     plt.close()
 
     # Convert distances to meters and calculate speed
     outerdistance_lengths_m = outerdistance_lengths * pixel_size
     centerdistance_lengths_m = centerdistance_lengths * pixel_size
-    speed_array = outerdistance_lengths_m / (num_days * 24 * 60)  # m/min
+    speed_array = outerdistance_lengths_m / num_days  # m/min
 
     # Plotting the speed vs angle
     plt.figure()
     ax = plt.subplot(111, polar=True)
     ax.scatter(angles_array, speed_array, marker='.', s=1)
-    plt.title('Speed vs angle', **FONT_SPEC)
+    plt.title(f'Speed (µm/{time_unit}) vs angle', **font_spec)
+    plt.gca().tick_params(labelsize=tick_size)
     if save_images_to_pdf:
         pdf_pages.savefig()
     else:
-        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-o_speed_vs_angle.png'))
+        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-p_speed_vs_angle.png'))
     plt.close()
 
     a = 1  # area for calculation - in this case = 1 bc pixels
@@ -777,33 +818,28 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
     Ixc = np.sum(full_distances_xy[:, 1].astype(np.float64) ** 2 * a)
     Iyc = np.sum(full_distances_xy[:, 0].astype(np.float64) ** 2 * a)
 
-    def plot_moment_of_inertia(title, moments):
-        categories = ['Ir', 'Ix', 'Iy']
-        plt.figure()
-        bars = plt.bar(categories, moments)
-        plt.title(title, **FONT_SPEC)
-        plt.ylabel('Moment (pixels^4)')
-        plt.gca().tick_params(labelsize=14)
+    # Plot the moment of inertia from center
+    title = 'Moment of inertia from center'
+    plot_moment_of_inertia(title, [Irc, Ixc, Iyc], font_spec, tick_size)
 
-        # Adding values on top of the bars
-        for bar, value in zip(bars, moments):
-            plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), f'{value:.2e}',
-                     ha='center', va='bottom')
+    if save_images_to_pdf:
+        pdf_pages.savefig()
+    else:
+        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-q_' + title.replace(' ', '_').lower() + '.png'))
+    plt.close()
 
-        if save_images_to_pdf:
-            pdf_pages.savefig()
-        else:
-            plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-p_' + title.replace(' ', '_').lower() + '.png'))
-        plt.close()
+    # Plot the moment of inertia from boundary
+    title = 'Moment of inertia from boundary'
+    plot_moment_of_inertia(title, [Irb, Ixb, Iyb], font_spec, tick_size)
+
+    if save_images_to_pdf:
+        pdf_pages.savefig()
+    else:
+        plt.savefig(os.path.join(save_fldr_path, f'{time_unit}{t}_img-r_' + title.replace(' ', '_').lower() + '.png'))
+    plt.close()
 
     if save_images_to_pdf:
         pdf_pages.close()
-
-    # Plot the moment of inertia from center
-    plot_moment_of_inertia('Moment of inertia from center', [Irc, Ixc, Iyc])
-
-    # Plot the moment of inertia from boundary
-    plot_moment_of_inertia('Moment of inertia from boundary', [Irb, Ixb, Iyb])
 
     return Irb, Ixb, Iyb, Irc, Ixc, Iyc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths, full_distances_xy, speed_array, pixel_size * speed_array
 
@@ -811,7 +847,7 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
 def quantify_progress_print(progress):
         print(f'Quantifying data {progress}% complete')
 
-def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Queue, pattern, time_unit, save_images_to_pdf=False):
+def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Queue, pattern, time_unit, pixel_scale, font_spec, tick_size, save_images_to_pdf=False):
     """
     Loops through spheroid images and saves the relevant data for further analysis. Groups spheroids by their prefix
     number and characterizes them based on the time points in the file name expressed as <time unit>T.
@@ -823,6 +859,9 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
         kill_queue (queue.Queue): A queue to send a kill signal to end the analysis early if desired
         pattern (str): A regular expression that finds the time point from the image name
         time_unit (str): The unit of measure for time
+        pixel_scale (float): The scale in micron / pixel for the microscope pixel_size
+        font_spec (dict): A dictionary defining the font size and font name for plot lables and title
+        tick_size (int): The size parameter for the x and y lables / ticks
         save_images_to_pdf (bool): A boolean stating whether to save images to pdf (currently some pdf files are corrupted)
     """
 
@@ -889,7 +928,8 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
         if not os.path.isdir(save_fldr_path):
             os.makedirs(save_fldr_path)
 
-        image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment, pattern, kill_queue, time_unit)
+        image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment, pattern, kill_queue, time_unit
+                                                         , pixel_scale, font_spec, tick_size)
         distances, indices, pixles, angles, outer_coordinates, kill_sig = image_set_for_this_experiment.distances_outside_initial_boundary(save_fldr_path, save_images_to_pdf)
 
         if kill_sig:
@@ -920,8 +960,6 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
         principle_Ixb_values = []
         principle_Iyb_values = []
         fname_list = []
-        speed_angle_columns_data = []
-        pca_speed_angle_columns_data = []
 
         for j in range(0, len(image_set_for_this_experiment.images) - 1):
             # Kill the program early if a kill signal is sent
@@ -930,12 +968,14 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
                 print('early stop')
                 return
 
+            speed_angle_columns_data = []
+            pca_speed_angle_columns_data = []
+
             img, t = image_set_for_this_experiment.images[j + 1], image_set_for_this_experiment.times[j + 1]
 
-            distances = distances[j]
-            metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances, angles[j], outer_coordinates[j]
-                                                  , np.sqrt(pixles[j, ::, 0] ** 2 + pixles[j, ::, 1] ** 2),
-                                                  pixles[j], 2, 1, save_images_to_pdf, time_unit)
+            metrics = PlotPixelDistancesandAngles(save_fldr_path, t, distances[j], angles[j], outer_coordinates[j]
+                                                  , np.sqrt(pixles[j][::, 0] ** 2 + pixles[j][::, 1] ** 2),
+                                                  pixles[j], 2, 1, save_images_to_pdf, time_unit, font_spec, tick_size)
             Irb, Ixb, Iyb, Irc, Ixc, Iyc, outerdistance_lengths, outer_distances_xy, centerdistance_lengths \
                 , full_distances_xy, speed_array, speed_dimensionalized = metrics
 
@@ -950,9 +990,9 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
             max_speeds.append(np.max(speed_dimensionalized))
             mean_speeds.append(np.mean(speed_dimensionalized))
             median_speeds.append(np.median(speed_dimensionalized))
-            max_angles.append(np.max(angles[j, :]))
-            mean_angles.append(np.mean(angles[j, :]))
-            median_angles.append(np.median(angles[j, :]))
+            max_angles.append(np.max(angles[j][:]))
+            mean_angles.append(np.mean(angles[j][:]))
+            median_angles.append(np.median(angles[j][:]))
 
             pca_metrics = img.pca(save_fldr_path, angles[j], speed_dimensionalized, t, save_images_to_pdf)
             pa0, pa1, ps0, ps1, prin_speed_difference, principle_Irb, principle_Ixb \
@@ -960,7 +1000,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
 
             # Append to the columns list with appropriate names
             speed_angle_columns_data.append((f'Speeds at {time_unit} {t}', speed_dimensionalized))
-            speed_angle_columns_data.append((f'Angles at {time_unit} {t}', angles[j, :]))
+            speed_angle_columns_data.append((f'Angles at {time_unit} {t}', angles[j][:]))
             pca_speed_angle_columns_data.append((f'PCA transformed Speeds at {time_unit} {t}', transformed_speeds))
             pca_speed_angle_columns_data.append((f'PCA transformed Angles at {time_unit} {t}', transformed_angles))
 
@@ -972,6 +1012,16 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
             principle_Irb_values.append(principle_Irb)
             principle_Ixb_values.append(principle_Ixb)
             principle_Iyb_values.append(principle_Iyb)
+
+            # Create the DataFrame from the dictionary
+            speed_angle_dataframe = pd.DataFrame(dict(speed_angle_columns_data))
+            speed_angle_dataframe.to_csv(os.path.join(save_fldr_path, save_prefix + f'_speeds_and_angles_{time_unit}{t}_full.csv'),
+                                         index=False)
+
+            # Create the DataFrame from the dictionary
+            pca_speed_angle_dataframe = pd.DataFrame(dict(pca_speed_angle_columns_data))
+            pca_speed_angle_dataframe.to_csv(os.path.join(save_fldr_path, save_prefix + f'_pca_speeds_and_angles_{time_unit}{t}_full.csv'),
+                                             index=False)
 
         # Create a dictionary of the summary values
         summary_dict = {id_name: [id_value] * (len(image_set_for_this_experiment.images) - 1) for id_name, id_value
@@ -1005,18 +1055,6 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
         # Concatenate current summary dataframe to overall summary dataframe
         overall_summary_dataframe = pd.concat([overall_summary_dataframe, summary_dataframe])
 
-        # Create a dictionary from the speed and angles column data
-        data_dict = dict(speed_angle_columns_data)
-        pca_data_dict = dict(pca_speed_angle_columns_data)
-
-        # Create the DataFrame from the dictionary
-        speed_angle_dataframe = pd.DataFrame(data_dict)
-        speed_angle_dataframe.to_csv(os.path.join(data_fldr, save_prefix + '_speeds_and_angles.csv'), index=False)
-
-        # Create the DataFrame from the dictionary
-        pca_speed_angle_dataframe = pd.DataFrame(pca_data_dict)
-        pca_speed_angle_dataframe.to_csv(os.path.join(data_fldr, save_prefix + '_pca_speeds_and_angles.csv'), index=False)
-
     # Save the overall summary dataframe to CSV at the end of the outermost loop
     overall_summary_path = os.path.join(data_fldr, 'overall_summary.csv')
     overall_summary_dataframe.to_csv(overall_summary_path, index=False)
@@ -1025,4 +1063,4 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
 
 if __name__ == "__main__":
     analysis_logic(r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt18 images to quantify\3D dynamic\masked'
-                   , {'experiment #': 18, 'condition': 'dynamic'}, quantify_progress_print, Queue(), PATTERN, 'day')
+                   , {'experiment #': 18, 'condition': 'dynamic'}, quantify_progress_print, Queue(), PATTERN, 'day', 1, FONT_SPEC, 11)
