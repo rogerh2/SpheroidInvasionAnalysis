@@ -980,7 +980,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
                 , full_distances_xy, speed_array, speed_dimensionalized = metrics
 
             fname_list.append(img.fname)
-            areas.append(np.sum(img.img_array))
+            areas.append(np.sum(img.img_array) * pixel_scale ** 2)
             Irb_values.append(Irb)
             Ixb_values.append(Ixb)
             Iyb_values.append(Iyb)
@@ -1062,5 +1062,5 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
 
 
 if __name__ == "__main__":
-    analysis_logic(r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt18 images to quantify\3D dynamic\masked'
-                   , {'experiment #': 18, 'condition': 'dynamic'}, quantify_progress_print, Queue(), PATTERN, 'day', 1, FONT_SPEC, 11)
+    analysis_logic(r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt 19\3D dynamic\masked'
+                   , {'experiment #': 19, 'condition': 'dynamic'}, quantify_progress_print, Queue(), PATTERN, 'day', 1, FONT_SPEC, 11)
