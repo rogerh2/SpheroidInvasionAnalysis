@@ -1,5 +1,13 @@
 
-# SpheroidInvasionAnalysis
+## SpheroidInvasionAnalysis-Python
+Corresponding manuscript: "Towards an Objective and High-throughput Quantification Method for Spheroid Invasion Assays" Rozanne W. Mungai, Roger J. Hartman, Grace Jolin, Kevin Piskorowski, and Kristen L. Billiar.
+
+DOI (---- TBD ---- )
+
+This repository contains Python scripts used to batch process images of multicellular spheroids and quantify invasion between two snapshot images. It is intended for cases where the same spheroid is imaged at an initial timepoint (such as Day 0, when no invasion has occurred) and again imaged at subsequent timepoints (such as Day 2, 4, etc...) to calculate the extent of invasion from the spheroid over time. Please see the corresponding manuscript for a use-case example.
+
+A MATLAB version of these scripts are provided by @rmungai.
+
 
 ## Overview
 
@@ -25,21 +33,34 @@ This file defines the graphical user interface (GUI) for the application, built 
 
 - **MainMenu**: The main menu that provides access to three functionalities: binarize images, analyze images, and consolidate CSV files.
 - **ImageBinarizationApp**: Handles the binarization of images, including loading images, applying thresholds, drawing boundaries, and saving the results.
-- **SpheroidAnalysisApp**: Manages the analysis of spheroid images, allowing users to select folders, input metadata, and run the analysis.
+- **SpheroidAnalysisApp**: Manages the analysis of spheroid images, allowing users to select folders, input metadata, and run the analysis to calculate the metrics used in the paper.
 - **CSVConcatenatorApp**: Allows users to select and concatenate multiple CSV files into a single file.
 
 ## Detailed ReadMe and Usage Guide
 
 ### Installation
 
-When running on Windows, the application comes with everything needed to run it with embedded Python.
-When installing on Linux or mac ensure you have the necessary dependencies installed. You can do this using pip:
+When running on Windows, the application comes with everything needed to run it with embedded Python. When installing on Linux or mac ensure you have the necessary dependencies installed. You can do this using pip:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Usage Guide
+### GUI Usage Guide
+
+#### Image Naming Conventions
+
+The application uses the image filenames to determine which images correspond to distinct spheroids and time points. Image names should start with an integer number, denoting a unique spheroid, followed by and underscore then the time unit and another integer number representing the time the image was taken. The initial time should be 0. The time unit can be set in settings. For example see below
+
+A valid image name:
+```
+1_day2_10x_CH1_8bit_18S.tif
+```
+
+An invalid image name:
+```
+10x_CH1_1_day2_8bit_18S.tif
+```
 
 #### Main Menu
 
@@ -49,35 +70,68 @@ When you run the application, the main window opens, providing access to three m
 - **Analyze**: Opens the Spheroid Analysis App.
 - **Consolidate**: Opens the CSV Concatenator App.
 
+![main menu.png](GUI instructional images/main menu.png)
+
+*The GUI main menu*
+
+#### **Settings Page**:
+Access the settings page to adjust time unit, pixel scale, font, and tick sizes.
+
 #### Binarize Images
 
 1. **Open the Binarize Window**: Click on "Binarize" from the main menu.
 2. **Select Folders**:
     - Click "Select Load Folder" to choose the folder containing the images you want to binarize.
     - Click "Select Save Folder" to choose the folder where the binarized images will be saved.
+    - Once you have selected your folders press continue
+   
+![binarize folder selection.png](GUI%20instructional%20images%2Fbinarize%20folder%20selection.png)
+
+*The binarize folder selection menu*
+
 3. **Binarize Window**:
-    - The images will be displayed side-by-side: the original grayscale image on the left and the binarized image on the right.
-    - Use the "Threshold" slider to adjust the binarization threshold.
-    - Draw boundaries on the binarized image to apply local thresholds or delete regions.
-    - Use the "Blur" slider to apply Gaussian blurring for better contour detection.
-    - Click "Auto-Detect Boundary" to automatically detect and draw contours.
-    - Use the "Save" button to save the binarized images.
-4. **Settings Page**:
-    - Access the settings page to adjust time unit, pixel scale, font, and tick sizes.
+   - The main binarization menu is used to customize image binarization. It allows the user to apply binarization thresholds globally throughout an entire image or locally within a drawn mask. It also allows users to automatically remove pixels outside of the main spheroid with automatic boundary detection.
+   - The images will be displayed side-by-side: the original grayscale image on the left and the binarized image on the right.
+   - Use the "Threshold" slider to adjust the binarization threshold.
+   - Draw boundaries on the binarized image to apply local thresholds or delete regions.
+     - When a drawn boundary is on the image the threshold slider only applies to pixels inside the boundary
+   - Click "Auto-Detect Boundary" to automatically detect and draw contours.
+   - Click "Auto Clean" to automatically remove pixels outside the largest contour. This is to establish the initial boundary on time 0 images to calculate invasion relative to.  
+   - Use the "Blur" slider to apply Gaussian blurring for better contour detection.
+   - Use the "Save" button when done to save all binarized images.They will be saved in two folders within your main save folder. The folders 'masked' and 'unmasked' will have the images save both with and without circular masks applied respectively. The circular mask is for radial symmetry in spheroids where invasion outside the image can cause false non-linearity in the data.
+
+![Binarization window with auto boundary.png](GUI%20instructional%20images%2FBinarization%20window%20with%20auto%20boundary.png)
+
+*The binarization screen with the auto detected boundary drawn. Pressing clean will remove the artifacts highlighted in red*
+
 
 #### Analyze Images
 
 1. **Open the Analyze Window**: Click on "Analyze" from the main menu.
-2. **Select Folder**: Click "Browse" to choose the folder containing the images to be analyzed.
+2. **Select Folder**: Click "Browse" to choose the folder containing the binarized images to be analyzed, choose either the masked or unmasked folder created in the prior step.
 3. **Enter Metadata**: Provide optional metadata for the analysis, such as experiment number or condition.
 4. **Run Analysis**: Click "Run Analysis" to start processing the images. Progress will be shown in a new window.
+   - The analysis will provide the location of each pixel outside the initial boundary in radial coordinates in a frame rotated so that the x-y axes correspond to the directions of maximum and minimum invasion
+   - In addition to raw data, the code will produce the plots and mean statistics used in the corresponding paper. The raw data and plots for each spheroid will be stored in a corresponding folder inside the folder with the binarized images. The statistics and meta-data will be stored in a csv called "overall_summary.csv"
+   - All metrics are calculated w.r.t the initial boundary
+
+![Analyze window with progress bar.png](GUI%20instructional%20images%2FAnalyze%20window%20with%20progress%20bar.png)
+
+*The analyze window at 50% progress. The bar updates after each image is processed, this may take a while for larger images*
+
 
 #### Consolidate CSV Files
 
+Once all images are analyzed they can be concatenated into one csv in the GUI for easy comparison or further analysis.
+
 1. **Open the Consolidate Window**: Click on "Consolidate" from the main menu.
-2. **Select CSV Files**: Click "Select CSV Files" to choose the CSV files you want to concatenate.
-3. **Remove Selected Files**: Use the "Remove Files" button to remove any selected files from the list.
+2. **Select CSV Files**: Click "Select CSV Files" and select the overall_summary files from the prior step. Any summaries created in that session will autopopulate.
+3. **Remove Files**: Use the "Remove Files" button to remove any selected files from the list.
 4. **Concatenate Files**: Click "Concatenate Files" to merge the selected CSV files into one. You will be prompted to choose a location to save the concatenated file.
+
+![concatenate files.png](GUI%20instructional%20images%2Fconcatenate%20files.png)
+
+*The concatenate files window. Se*
 
 ### Running the Application
 

@@ -185,3 +185,22 @@ class BinarizedImage:
         # Save the binarized image with the circular mask
         masked_image = Image.fromarray((self.binary_array * 255).astype(np.uint8))
         masked_image.save(os.path.join(masked_folder_path, f'{save_name}_{MASKED}{self.img_ext}'))
+
+
+if __name__=="__main__":
+    # Example path to an image file
+    image_path = r'.\Example Images\3D static\1_day0_10x_CH1_8bit_18S.tif'
+    save_path = r'.\Example Images\3D static\\'
+
+    # Initialize the BinarizedImage object
+    bin_image = BinarizedImage(image_path, save_path, threshold=36)
+
+    # Apply a different threshold if needed
+    new_threshold = 50
+    bin_image.update_mask(new_threshold)
+
+    # Optionally, apply Gaussian blur and find contours
+    bin_image.auto_contour(guassian_kernel=(5, 5))
+
+    # Save the binarized image
+    bin_image.save_binarized_image()

@@ -1062,5 +1062,6 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
 
 
 if __name__ == "__main__":
-    analysis_logic(r'D:\OneDrive\Roger and Rozanne\spheroid analysis\Expt 19\3D dynamic\masked'
+    # Run this after binarizing your images
+    analysis_logic(r'.\Expt 19\3D dynamic\masked'
                    , {'experiment #': 19, 'condition': 'dynamic'}, quantify_progress_print, Queue(), PATTERN, 'day', 1, FONT_SPEC, 11)
