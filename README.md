@@ -32,8 +32,7 @@ This file defines the graphical user interface (GUI) for the application, built 
 
 ### Installation
 
-The application comes with everything needed to run it with embedded Python (currently only supported on Windows).
-To run the application, use the provided `run.bat` file. Simply double-click `run.bat` to start the application.
+When running on Windows, the application comes with everything needed to run it with embedded Python.
 When installing on Linux or mac ensure you have the necessary dependencies installed. You can do this using pip:
 
 ```bash
