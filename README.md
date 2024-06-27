@@ -75,7 +75,14 @@ When you run the application, the main window opens, providing access to three m
 *The GUI main menu*
 
 #### **Settings Page**:
-Access the settings page to adjust time unit, pixel scale, font, and tick sizes.
+1. **Performance Settings** The only setting that afects performance is the batch size. The batch size is the number of pixels to process in one go in each iteration during the analysis step. A larger batch size can lead to shorter processing times by higher RAM usage.
+2. **Dimensional Settings** These set the time unit and the micrometers per pixel. The time unit should match the one used in your file name. In the example provided an image was taken each hour.
+3. **Plot Settings** The GUI will automatically produce plots during the analysis step. This let's the user set the font, font size, and tick size for the axes. The plot settings can be previewed once chosen.
+
+![settings.png](GUI%20instructional%20images%2Fsettings.png)
+
+*The settings menu*
+
 
 #### Binarize Images
 

@@ -143,6 +143,8 @@ class MainMenu:
         self.settings_button = Button(self.frame, text="Settings", command=self.open_settings_window)
         self.settings_button.pack()  # Adjust the positioning according to your layout
 
+        self.batch_size_var = None
+
         # Add a Help button
         self.help_button = Button(self.frame, text="Help", command=lambda: open_popup_window(self.master, "File Naming Instructions:\n"
                                 "Image file names should begin with an integer number followed"
@@ -161,7 +163,19 @@ class MainMenu:
         settings_window.title("Settings")
         pad_size = 5
 
-        # Plot Settings Label
+        # Performance Settings Label
+        Label(settings_window, text="Performance Settings", font=("Arial", 14)).pack(pady=(2 * pad_size, 0))
+
+        Label(settings_window, text="Batch Size:").pack(pady=(pad_size, 0))  # Label for the batch size
+        if self.batch_size_var is None:
+            self.batch_size_var = StringVar(value='10000')  # Default batch size
+        self.batch_size_entry = Entry(settings_window, textvariable=self.batch_size_var, validate="key",
+                                      validatecommand=(
+                                      self.master.register(self.is_integer), '%P'))  # Text box for batch size
+        self.batch_size_entry.pack(pady=(0, pad_size))  # Pack the text box into the frame
+
+
+        # Dimensional Settings Label
         Label(settings_window, text="Dimensional Settings", font=("Arial", 14)).pack(pady=(pad_size, 0))
 
         Label(settings_window, text="Time Unit:").pack(pady=(pad_size, 0))  # Label for the text box
@@ -196,6 +210,12 @@ class MainMenu:
         self.preview_button = Button(settings_window, text="Preview Plot Format", command=self.preview_plot)
         self.preview_button.pack(pady=(pad_size, pad_size))
 
+    def is_integer(self, P):
+        # Function to test if input is a valid integer
+        if P.isdigit():
+            return True
+        return P == ""
+
     def open_concat_window(self):
             self.concat_ap.open_consolidate_window(self.analyze_ap.summary_files)
 
@@ -205,9 +225,13 @@ class MainMenu:
         font_name = self.font_var.get()
         font_size = int(self.font_size_var.get())
         font_spec = {'fontname': font_name, 'size': font_size}
+        if self.batch_size_var is None:
+            batch_size = 10000
+        else:
+            batch_size = int(self.batch_size_var.get())
         tick_size = int(self.tick_size_var.get())
         pattern = rf'{time_unit}(\d+)'
-        self.analyze_ap.open_analyze_window(pattern, time_unit, pixel_scale, font_spec, tick_size)
+        self.analyze_ap.open_analyze_window(pattern, time_unit, pixel_scale, font_spec, tick_size, batch_size)
 
     def preview_plot(self):
         def on_close_preview():
@@ -919,8 +943,9 @@ class SpheroidAnalysisApp:
         self.pixel_scale = 1
         self.font_spec = FONT_SPEC
         self.tick_size = 11
+        self.batch_size = 10000
 
-    def open_analyze_window(self, time_regex, time_unit, pixel_scale, font_spec, tick_size):
+    def open_analyze_window(self, time_regex, time_unit, pixel_scale, font_spec, tick_size, batch_size):
         # Hide the main window
         self.root.withdraw()
 
@@ -932,6 +957,7 @@ class SpheroidAnalysisApp:
         self.pixel_scale = pixel_scale
         self.font_spec = font_spec
         self.tick_size = tick_size
+        self.batch_size = batch_size
 
         # Create the binarize window
         self.analyze_window = Toplevel()
@@ -1079,7 +1105,8 @@ class SpheroidAnalysisApp:
         # Update this line in the analysis_logic method
         save_to_pdf = False # self.save_to_pdf_var.get()
         summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, self.time_regex
-                                           , self.time_unit, self.pixel_scale, self.font_spec, self.tick_size, save_images_to_pdf=save_to_pdf)
+                                           , self.time_unit, self.pixel_scale, self.font_spec, self.tick_size
+                                           , self.batch_size, save_images_to_pdf=save_to_pdf)
         self.summary_files.append(summary_file_path)
 
         # Complete the progress bar

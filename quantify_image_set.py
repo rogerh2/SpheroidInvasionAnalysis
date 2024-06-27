@@ -33,6 +33,7 @@ class SpheroidImage:
         time_unit (str): The unit of time used for the images
         font_spec (dict): A dictionary defining the font size and font name for plot lables and title
         tick_size (int): A parameter controlling the size of the x and y lables / ticks
+        batch_size (int): The number of pixels to process in one batch during the analysis
 
     Attributes:
         boundary (array): The boundary coordinates of the largest spheroid in the image
@@ -40,9 +41,10 @@ class SpheroidImage:
         img_array (array): The spheroid image stored in array form
         x_coords (array): The x coordinates of every pixel in img_array
         y_coords (array): The y coordinates of every pixel in img_array
+        batch_size (int): The number of pixels to process in one batch during the analysis
     """
 
-    def __init__(self, fpath, kill_Q: Queue, time_unit, font_spec, tick_size):
+    def __init__(self, fpath, kill_Q: Queue, time_unit, font_spec, tick_size, batch_size):
         source_image = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)
 
         # Find contours in the source image
@@ -57,6 +59,7 @@ class SpheroidImage:
         Y = int(M["m01"] / M["m00"])
 
         self.boundary = largest_contour
+        self.batch_size = batch_size
         self.centroid = np.array([X, Y])
         self.img_array = source_image
         self.fname = Path(fpath).stem
@@ -137,7 +140,7 @@ class SpheroidImage:
         outer_pixels_full = self.get_pixle_coor_outside_boundary(boundary)
 
         # Setup batching to avoid out of memory errors on smaller CPUs
-        batch_size = 10000
+        batch_size = self.batch_size
         num_pix = len(outer_pixels_full)
         num_batches = num_pix // batch_size + (num_pix % batch_size != 0)
 
@@ -387,6 +390,7 @@ class QuantSpheroidSet:
         tick_size (int): A parameter controlling the size of the x and y lables / ticks
         save_path (str, optional): The path where outputs should be saved. If None, uses the
                                    directory of the first image.
+        batch_size (int): The number of pixels to be processed in each batch in the analysis loop
 
     Attributes:
         times (array): Sorted times extracted from image file names.
@@ -395,7 +399,7 @@ class QuantSpheroidSet:
         save_fldr_path (str): Path to the folder where outputs will be saved.
     """
 
-    def __init__(self, image_fpaths, pattern, kill_Q: Queue, time_unit: str, pixel_size, font_spec, tick_size, save_path=None):
+    def __init__(self, image_fpaths, pattern, kill_Q: Queue, time_unit: str, pixel_size, font_spec, tick_size, batch_size, save_path=None):
         # Extracting time information from the image filenames
         sample_times = np.array([int(re.search(pattern, os.path.basename(filename)).group(1))
                         for filename in image_fpaths if re.search(pattern, filename)])
@@ -407,7 +411,7 @@ class QuantSpheroidSet:
         self.pixel_size = pixel_size
 
         # Loading images as SpheroidImage objects
-        self.images = [SpheroidImage(fpath, kill_Q, time_unit, font_spec, tick_size) for fpath in self.paths]
+        self.images = [SpheroidImage(fpath, kill_Q, time_unit, font_spec, tick_size, batch_size) for fpath in self.paths]
         self.line_width = 1
         self.marker_size = 10
         self.font_spec = font_spec
@@ -847,7 +851,7 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
 def quantify_progress_print(progress):
         print(f'Quantifying data {progress}% complete')
 
-def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Queue, pattern, time_unit, pixel_scale, font_spec, tick_size, save_images_to_pdf=False):
+def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Queue, pattern, time_unit, pixel_scale, font_spec, tick_size, batch_size, save_images_to_pdf=False):
     """
     Loops through spheroid images and saves the relevant data for further analysis. Groups spheroids by their prefix
     number and characterizes them based on the time points in the file name expressed as <time unit>T.
@@ -863,6 +867,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
         font_spec (dict): A dictionary defining the font size and font name for plot lables and title
         tick_size (int): The size parameter for the x and y lables / ticks
         save_images_to_pdf (bool): A boolean stating whether to save images to pdf (currently some pdf files are corrupted)
+        batch_size (int): The number of pixels to process in one batch during the analysis
     """
 
     print('Analysis started')
@@ -929,7 +934,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
             os.makedirs(save_fldr_path)
 
         image_set_for_this_experiment = QuantSpheroidSet(fpaths_for_this_experiment, pattern, kill_queue, time_unit
-                                                         , pixel_scale, font_spec, tick_size)
+                                                         , pixel_scale, font_spec, tick_size, batch_size)
         distances, indices, pixles, angles, outer_coordinates, kill_sig = image_set_for_this_experiment.distances_outside_initial_boundary(save_fldr_path, save_images_to_pdf)
 
         if kill_sig:
@@ -1064,4 +1069,4 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
 if __name__ == "__main__":
     # Run this after binarizing your images
     analysis_logic(r'.\Expt 19\3D dynamic\masked'
-                   , {'experiment #': 19, 'condition': 'dynamic'}, quantify_progress_print, Queue(), PATTERN, 'day', 1, FONT_SPEC, 11)
+                   , {'experiment #': 19, 'condition': 'dynamic'}, quantify_progress_print, Queue(), PATTERN, 'day', 1, FONT_SPEC, 11, batch_size=10000)
