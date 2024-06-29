@@ -87,7 +87,7 @@ When you run the application, the main window opens, providing access to three m
 - **Analyze**: Opens the Spheroid Analysis App.
 - **Consolidate**: Opens the CSV Concatenator App.
 
-![main menu.png](./GUI instructional images/main menu.png)
+![main menu.png](GUI%20instructional%20images/main%20menu.png)
 
 *The GUI main menu*
 
