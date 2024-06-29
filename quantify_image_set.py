@@ -1,6 +1,3 @@
-import tkinter as tk
-import threading
-from tkinter import filedialog, ttk
 import os
 from pathlib import Path
 import re
@@ -10,7 +7,6 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
-from matplotlib.widgets import Slider
 from sklearn.decomposition import PCA
 from constants import *
 from queue import Queue
@@ -42,6 +38,11 @@ class SpheroidImage:
         x_coords (array): The x coordinates of every pixel in img_array
         y_coords (array): The y coordinates of every pixel in img_array
         batch_size (int): The number of pixels to process in one batch during the analysis
+        fname (str): The stem of the file name of the spheroid image.
+        kill_queue (queue.Queue): The queue to send a kill signal to end the analysis early if desired.
+        time_unit (str): The unit of time used for the images.
+        font_spec (dict): The font specifications for plot labels and title.
+        tick_size (int): The size of the x and y labels / ticks.
     """
 
     def __init__(self, fpath, kill_Q: Queue, time_unit, font_spec, tick_size, batch_size):
@@ -59,12 +60,12 @@ class SpheroidImage:
         Y = int(M["m01"] / M["m00"])
 
         self.boundary = largest_contour
-        self.batch_size = batch_size
         self.centroid = np.array([X, Y])
         self.img_array = source_image
         self.fname = Path(fpath).stem
         self.kill_queue = kill_Q
         self.time_unit = time_unit
+        self.batch_size = batch_size
 
         # Generate a range of numbers for the width and height
         x_range = np.arange(source_image.shape[0])
@@ -377,8 +378,8 @@ class SpheroidImage:
 
 class QuantSpheroidSet:
     """
-    This class processes a set of image file paths, sorts them based on time extracted from
-    their filenames, and loads the images. It also sets the save folder path for any outputs.
+    This class processes a set of images corresponding to a single spheroid at multiple time points, sorts them based
+    on time extracted from their filenames, and loads the images. It also sets the save folder path for any outputs.
 
     Args:
         image_fpaths (list): A list of file paths for the images.
@@ -388,15 +389,21 @@ class QuantSpheroidSet:
         pixel_size (float): The scale in micron / pixel for the microscope pixel_size
         font_spec (dict): A dictionary defining the font size and font name for plot lables and title
         tick_size (int): A parameter controlling the size of the x and y lables / ticks
+        batch_size (int): The number of pixels to be processed in each batch in the analysis loop
         save_path (str, optional): The path where outputs should be saved. If None, uses the
                                    directory of the first image.
-        batch_size (int): The number of pixels to be processed in each batch in the analysis loop
 
     Attributes:
         times (array): Sorted times extracted from image file names.
         paths (array): Image file paths sorted according to their corresponding times.
         images (list): A list of SpheroidImage objects loaded from the paths.
         save_fldr_path (str): Path to the folder where outputs will be saved.
+        pixel_size (float): The scale in micron/pixel for the microscope pixel size.
+        line_width (int): The width of lines in plots.
+        marker_size (int): The size of markers in plots.
+        font_spec (dict): The font specifications for plot labels and title.
+        tick_size (int): The size of the x and y labels / ticks.
+        time_str (str): The unit of time used for the images.
     """
 
     def __init__(self, image_fpaths, pattern, kill_Q: Queue, time_unit: str, pixel_size, font_spec, tick_size, batch_size, save_path=None):
@@ -851,7 +858,8 @@ def PlotPixelDistancesandAngles(save_fldr_path, t, outerdistance_lengths, angles
 def quantify_progress_print(progress):
         print(f'Quantifying data {progress}% complete')
 
-def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Queue, pattern, time_unit, pixel_scale, font_spec, tick_size, batch_size, save_images_to_pdf=False):
+def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Queue, pattern, time_unit, pixel_scale
+                   , font_spec, tick_size, batch_size, save_images_to_pdf=False):
     """
     Loops through spheroid images and saves the relevant data for further analysis. Groups spheroids by their prefix
     number and characterizes them based on the time points in the file name expressed as <time unit>T.
@@ -866,8 +874,8 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
         pixel_scale (float): The scale in micron / pixel for the microscope pixel_size
         font_spec (dict): A dictionary defining the font size and font name for plot lables and title
         tick_size (int): The size parameter for the x and y lables / ticks
-        save_images_to_pdf (bool): A boolean stating whether to save images to pdf (currently some pdf files are corrupted)
         batch_size (int): The number of pixels to process in one batch during the analysis
+        save_images_to_pdf (bool): A boolean stating whether to save images to pdf (currently some pdf files are corrupted)
     """
 
     print('Analysis started')
@@ -1069,4 +1077,5 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
 if __name__ == "__main__":
     # Run this after binarizing your images
     analysis_logic(r'.\Expt 19\3D dynamic\masked'
-                   , {'experiment #': 19, 'condition': 'dynamic'}, quantify_progress_print, Queue(), PATTERN, 'day', 1, FONT_SPEC, 11, batch_size=10000)
+                   , {'experiment #': 19, 'condition': 'dynamic'}, quantify_progress_print, Queue(), PATTERN
+                   , 'day', 1, FONT_SPEC, 11, batch_size=10000)

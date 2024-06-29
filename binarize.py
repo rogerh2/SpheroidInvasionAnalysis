@@ -1,5 +1,5 @@
 
-from PIL import Image, ImageTk, ImageOps
+from PIL import Image
 import numpy as np
 import cv2
 import os
@@ -40,7 +40,7 @@ class BinarizedImage:
         else:
             self.save_fldr_path = save_path
 
-        # Load the raw image (assuming it's grayscale)
+        # Load the raw image
         self.grayscale_array = cv2.imread(self.img_path, cv2.IMREAD_GRAYSCALE)
         self.binary_array = self.grayscale_array >= int(threshold)
         self.threshold = threshold
@@ -188,18 +188,17 @@ class BinarizedImage:
 
 
 if __name__=="__main__":
-    # Example path to an image file
     image_path = r'.\Example Images\3D static\1_day0_10x_CH1_8bit_18S.tif'
     save_path = r'.\Example Images\3D static\\'
 
     # Initialize the BinarizedImage object
     bin_image = BinarizedImage(image_path, save_path, threshold=36)
 
-    # Apply a different threshold if needed
+    # Apply a different threshold
     new_threshold = 50
     bin_image.update_mask(new_threshold)
 
-    # Optionally, apply Gaussian blur and find contours
+    # Apply Gaussian blur and find contours
     bin_image.auto_contour(guassian_kernel=(5, 5))
 
     # Save the binarized image

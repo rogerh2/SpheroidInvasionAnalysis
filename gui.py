@@ -1,7 +1,6 @@
 # Importing required modules for GUI and image processing
-from tkinter import (Canvas, Toplevel, Checkbutton, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
-    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox, BooleanVar, StringVar
-, OptionMenu)
+from tkinter import (Canvas, Toplevel, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
+    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox, StringVar)
 from PIL import Image, ImageTk
 from queue import Queue
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -132,16 +131,16 @@ class MainMenu:
 
         # Add Main Menu buttons
         self.binarize_button = Button(self.frame, text="Binarize", command=self.binarize_ap.open_folder_selection_popup)
-        self.binarize_button.pack()  # You will need to adjust the positioning according to your layout
+        self.binarize_button.pack()
 
         self.process_button = Button(self.frame, text="Analyze", command=self.run_analysis)
-        self.process_button.pack()  # You will need to adjust the positioning according to your layout
+        self.process_button.pack()
 
         self.process_button = Button(self.frame, text="Consolidate", command=self.open_concat_window)
-        self.process_button.pack()  # You will need to adjust the positioning according to your layout
+        self.process_button.pack()
 
         self.settings_button = Button(self.frame, text="Settings", command=self.open_settings_window)
-        self.settings_button.pack()  # Adjust the positioning according to your layout
+        self.settings_button.pack()
 
         self.batch_size_var = None
 
@@ -156,7 +155,7 @@ class MainMenu:
                                 "2. Open 'Analyze' to calculate metrics.\n"
                                 "3. Use 'Consolidate' to concatenate all the data csv files.\n\n"
                                 "To return to the main window from a sub window close the subwindow with the x"))
-        self.help_button.pack()  # Adjust the positioning according to your layout
+        self.help_button.pack()
 
     def open_settings_window(self):
         settings_window = Toplevel(self.master)
@@ -166,27 +165,27 @@ class MainMenu:
         # Performance Settings Label
         Label(settings_window, text="Performance Settings", font=("Arial", 14)).pack(pady=(2 * pad_size, 0))
 
-        Label(settings_window, text="Batch Size:").pack(pady=(pad_size, 0))  # Label for the batch size
+        Label(settings_window, text="Batch Size:").pack(pady=(pad_size, 0))
         if self.batch_size_var is None:
-            self.batch_size_var = StringVar(value='10000')  # Default batch size
+            self.batch_size_var = StringVar(value='10000')
         self.batch_size_entry = Entry(settings_window, textvariable=self.batch_size_var, validate="key",
                                       validatecommand=(
-                                      self.master.register(self.is_integer), '%P'))  # Text box for batch size
-        self.batch_size_entry.pack(pady=(0, pad_size))  # Pack the text box into the frame
+                                      self.master.register(self.is_integer), '%P'))
+        self.batch_size_entry.pack(pady=(0, pad_size))
 
 
         # Dimensional Settings Label
         Label(settings_window, text="Dimensional Settings", font=("Arial", 14)).pack(pady=(pad_size, 0))
 
-        Label(settings_window, text="Time Unit:").pack(pady=(pad_size, 0))  # Label for the text box
-        self.time_unit_entry = Entry(settings_window, textvariable=self.time_unit_var)  # Text box for time unit
-        self.time_unit_entry.pack(pady=(0, pad_size))  # Pack the text box into the frame
+        Label(settings_window, text="Time Unit:").pack(pady=(pad_size, 0))
+        self.time_unit_entry = Entry(settings_window, textvariable=self.time_unit_var)
+        self.time_unit_entry.pack(pady=(0, pad_size))
 
         float_vcmd = (self.master.register(is_float_input), '%P')
-        Label(settings_window, text="Pixel Scale (µm/pixel):").pack(pady=(pad_size, 0))  # Label for the text box
+        Label(settings_window, text="Pixel Scale (µm/pixel):").pack(pady=(pad_size, 0))
         self.pixel_scale_entry = Entry(settings_window, textvariable=self.pixel_scale_var
-                                       , validate="key", validatecommand=float_vcmd)  # Text box for time unit
-        self.pixel_scale_entry.pack(pady=(0, pad_size))  # Pack the text box into the frame
+                                       , validate="key", validatecommand=float_vcmd)
+        self.pixel_scale_entry.pack(pady=(0, pad_size))
 
         # Plot Settings Label
         Label(settings_window, text="Plot Settings", font=("Arial", 14)).pack(pady=(2 * pad_size, 0))
@@ -290,8 +289,7 @@ class ImageBinarizationApp:
 
         # Threshold
         self.threshold_scale = None
-        self.local_threshold = 36
-        # Member variable to store the points for local threshold or deletion
+        self.local_threshold = 36 # Member variable to store the points for local threshold or deletion
         self.points = []
         self.oval_ids = []
 
@@ -876,7 +874,7 @@ class ImageBinarizationApp:
                 self.pan_start_x, self.pan_start_y = event.x, event.y
 
     def stop_panning(self, event):
-        if not self.draw_var:  # Only start panning if not in draw mode
+        if not self.draw_var:  # Only stop panning if not in draw mode
             # Update pan offsets
             self.pan_offset_x += event.x - self.pan_start_x
             self.pan_offset_y += event.y - self.pan_start_y
@@ -959,7 +957,7 @@ class SpheroidAnalysisApp:
         self.tick_size = tick_size
         self.batch_size = batch_size
 
-        # Create the binarize window
+        # Create the analyze window
         self.analyze_window = Toplevel()
         self.analyze_window.title("Analyze Image")
         self.analyze_window.protocol("WM_DELETE_WINDOW", self.on_close_analyze_window)  # Handle the close event
@@ -1103,7 +1101,7 @@ class SpheroidAnalysisApp:
             if self.analyze_window: self.analyze_window.after(0, self.update_progress_bar, p)
 
         # Update this line in the analysis_logic method
-        save_to_pdf = False # self.save_to_pdf_var.get()
+        save_to_pdf = False  # self.save_to_pdf_var.get()
         summary_file_path = analysis_logic(data_fldr, master_id_dict, progress_update, self.kill_queue, self.time_regex
                                            , self.time_unit, self.pixel_scale, self.font_spec, self.tick_size
                                            , self.batch_size, save_images_to_pdf=save_to_pdf)
@@ -1145,13 +1143,8 @@ class CSVConcatenatorApp:
         self.root = root
         self.file_paths = []
 
-        # Create the binarize window
         self.consolidate_window = None
-
-        # Create a listbox to display file paths
         self.listbox = None
-
-        # Create and place buttons
         self.select_button = None
         self.concatenate_button = None
 
@@ -1160,7 +1153,7 @@ class CSVConcatenatorApp:
         # Hide the main window
         self.root.withdraw()
 
-        # Create the binarize window
+        # Create the consolidate window
         self.consolidate_window = Toplevel()
         self.consolidate_window.title("Consildate data")
         self.consolidate_window.protocol("WM_DELETE_WINDOW", self.on_close_consolidate_window)  # Handle the close event
@@ -1214,7 +1207,7 @@ class CSVConcatenatorApp:
     def on_close_consolidate_window(self):
 
         if self.consolidate_window:
-            self.consolidate_window.destroy()  # Destroy the analysis window
+            self.consolidate_window.destroy()  # Destroy the consolidate window
             self.consolidate_window = None  # Reset the window variable
 
         # Reset all components to None

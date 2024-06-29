@@ -1,10 +1,11 @@
 
-## SpheroidInvasionAnalysis-Python
+## SpheroidInvasionAnalysis
 Corresponding manuscript: "Towards an Objective and High-throughput Quantification Method for Spheroid Invasion Assays" Rozanne W. Mungai, Roger J. Hartman, Grace Jolin, Kevin Piskorowski, and Kristen L. Billiar.
 
-DOI (---- TBD ---- )
+* DOI (will be added after publication, currently in peer-review)
+* Please cite the above manuscript if you use these scripts in your research.
 
-This repository contains Python scripts used to batch process images of multicellular spheroids and quantify invasion between two snapshot images. It is intended for cases where the same spheroid is imaged at an initial timepoint (such as Day 0, when no invasion has occurred) and again imaged at subsequent timepoints (such as Day 2, 4, etc...) to calculate the extent of invasion from the spheroid over time. Please see the corresponding manuscript for a use-case example.
+This repository contains **Python** scripts used to batch process images of multicellular spheroids and quantify invasion between two snapshot images. It is intended for cases where the same spheroid is imaged at an initial timepoint (such as Day 0, when no invasion has occurred) and again imaged at subsequent timepoints (such as Day 2, 4, etc...) to calculate the extent of invasion from the spheroid over time. Please see the corresponding manuscript for a use-case example.
 
 A MATLAB version of these scripts are provided by @rmungai.
 
@@ -40,7 +41,23 @@ This file defines the graphical user interface (GUI) for the application, built 
 
 ### Installation
 
-When running on Windows, the application comes with everything needed to run it with embedded Python. When installing on Linux or mac ensure you have the necessary dependencies installed. You can do this using pip:
+#### Cloning the Repository
+
+First, clone the repository from GitHub. Open a terminal (Command Prompt, PowerShell, or any other terminal application) and run the following command:
+
+```bash
+git clone https://github.com/rogerh2/SpheroidInvasionAnalysis.git
+```
+
+Navigate into the cloned repository:
+
+```bash
+cd SpheroidInvasionAnalysis
+```
+
+#### Installing Dependencies
+
+When running on Windows, the application comes with everything needed to run it with embedded Python. When installing on Linux or macOS, ensure you have the necessary dependencies installed. You can do this using pip:
 
 ```bash
 pip install -r requirements.txt
@@ -74,10 +91,10 @@ When you run the application, the main window opens, providing access to three m
 
 *The GUI main menu*
 
-#### **Settings Page**:
-1. **Performance Settings** The only setting that afects performance is the batch size. The batch size is the number of pixels to process in one go in each iteration during the analysis step. A larger batch size can lead to shorter processing times by higher RAM usage.
+#### Settings Page
+1. **Performance Settings** The only setting that affects performance is the batch size. The batch size is the number of pixels to process during each iteration during the analysis step. A larger batch size can lead to shorter processing times by higher RAM usage.
 2. **Dimensional Settings** These set the time unit and the micrometers per pixel. The time unit should match the one used in your file name. In the example provided an image was taken each hour.
-3. **Plot Settings** The GUI will automatically produce plots during the analysis step. This let's the user set the font, font size, and tick size for the axes. The plot settings can be previewed once chosen.
+3. **Plot Settings** The GUI will automatically produce plots during the analysis step. This lets the user set the font, font size, and tick size for the axes. The plot settings can be previewed once chosen.
 
 ![settings.png](GUI%20instructional%20images%2Fsettings.png)
 
@@ -117,9 +134,10 @@ When you run the application, the main window opens, providing access to three m
 1. **Open the Analyze Window**: Click on "Analyze" from the main menu.
 2. **Select Folder**: Click "Browse" to choose the folder containing the binarized images to be analyzed, choose either the masked or unmasked folder created in the prior step.
 3. **Enter Metadata**: Provide optional metadata for the analysis, such as experiment number or condition.
-4. **Run Analysis**: Click "Run Analysis" to start processing the images. Progress will be shown in a new window.
-   - The analysis will provide the location of each pixel outside the initial boundary in radial coordinates in a frame rotated so that the x-y axes correspond to the directions of maximum and minimum invasion
-   - In addition to raw data, the code will produce the plots and mean statistics used in the corresponding paper. The raw data and plots for each spheroid will be stored in a corresponding folder inside the folder with the binarized images. The statistics and meta-data will be stored in a csv called "overall_summary.csv"
+4. **Run Analysis**: Click "Run Analysis" to start processing the images. Progress will be shown in a new window. The analysis will produce
+   - The location of each pixel outside the initial boundary in radial coordinates.
+   - The x-y axes correspond to the directions of maximum and minimum invasion.
+   - Raw data, plots, and mean statistics used in the corresponding paper stored in a csv called "overall_summary.csv"
    - All metrics are calculated w.r.t the initial boundary
 
 ![Analyze window with progress bar.png](GUI%20instructional%20images%2FAnalyze%20window%20with%20progress%20bar.png)
@@ -210,7 +228,7 @@ To analyze a set of spheroid images using the `QuantSpheroidSet` class in `quant
 1. **Import the Necessary Classes and Functions**:
 
     ```python
-    from quant import QuantSpheroidSet, analysis_logic
+    from quantify_image_set import QuantSpheroidSet, analysis_logic
     from queue import Queue
     ```
 
