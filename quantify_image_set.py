@@ -151,15 +151,22 @@ class SpheroidImage:
         boundary_pixels_full = np.zeros(outer_pixels_full.shape)
         kill_sig = False
 
+        # Convert the relevant arrays to float32 before the loop
+        outer_pixels_full = outer_pixels_full.astype(np.float32)
+        boundary = boundary.astype(np.float32)
+        distance_magnitude = distance_magnitude.astype(np.float32)
+        close_inds = close_inds.astype(np.float32)
+        boundary_pixels_full = boundary_pixels_full.astype(np.float32)
+
+        # Process in float32 within the loop
         for i in range(num_batches):
             if not self.kill_queue.empty():
                 kill_sig = self.kill_queue.get()
                 break
             # Select the outer pixels for this batch
-            outer_pixels = outer_pixels_full[i * batch_size : min((i + 1) * batch_size, num_pix)]
+            outer_pixels = outer_pixels_full[i * batch_size: min((i + 1) * batch_size, num_pix)]
 
-            # Define coordinates and center everything along the centroid location to make calculations
-            # easier
+            # Define coordinates and center everything along the centroid location to make calculations easier
             x0 = self.centroid[0]
             y0 = self.centroid[1]
             x1 = outer_pixels[:, 0].T - x0
@@ -177,7 +184,7 @@ class SpheroidImage:
             y1_reshaped = np.tile(y1, (M, 1))  # shape M, N
 
             # Define slopes
-            m = y1_reshaped / safe_for_divide(x1_reshaped) # shape M, N
+            m = y1_reshaped / safe_for_divide(x1_reshaped)  # shape M, N
 
             # Calculate the minimum distance from each boundary point to each line
             x_min = (xb_reshaped + m * yb_reshaped) / (1 + m ** 2)  # shape M, N
@@ -193,13 +200,15 @@ class SpheroidImage:
             perp_y1 = (-1 / safe_for_divide(m))
             perp_y2 = (1 / safe_for_divide(m))
             perp_valb = (xb_reshaped - perp_x1) * (perp_y2 - perp_y1) - (yb_reshaped - perp_y1) * (perp_x2 - perp_x1)
-            perp_val_locs = (x1_reshaped - perp_x1) * (perp_y2 - perp_y1) - (y1_reshaped - perp_y1) * (perp_x2 - perp_x1)
+            perp_val_locs = (x1_reshaped - perp_x1) * (perp_y2 - perp_y1) - (y1_reshaped - perp_y1) * (
+                        perp_x2 - perp_x1)
 
-            perp_mask = np.not_equal((perp_valb / safe_for_divide(np.abs(perp_valb))),  (perp_val_locs / safe_for_divide(np.abs(perp_val_locs))))
+            perp_mask = np.not_equal((perp_valb / safe_for_divide(np.abs(perp_valb))),
+                                     (perp_val_locs / safe_for_divide(np.abs(perp_val_locs))))
 
             # - Part 2: Filters out parts of boundary that are overlapping/ further from
             # - the centroid than the POI
-            dist_mask = (xb_reshaped ** 2 + yb_reshaped ** 2) > (x1_reshaped ** 2 + y1_reshaped** 2)
+            dist_mask = (xb_reshaped ** 2 + yb_reshaped ** 2) > (x1_reshaped ** 2 + y1_reshaped ** 2)
 
             # - Part 3: Apply filters
             tot_mask = np.logical_or(perp_mask, dist_mask)
@@ -208,14 +217,22 @@ class SpheroidImage:
             # -------------------------------------------------------------------- #
 
             # Find the intercept by finding the boundary point closest to the line
-            current_close_inds = np.argmin(d, axis=0) # shape will be (N,)
+            current_close_inds = np.argmin(d, axis=0)  # shape will be (N,)
             close_inds[i * batch_size: min((i + 1) * batch_size, num_pix)] = current_close_inds
 
             # calculate the distance magnitude
-            xb_close = xb[current_close_inds] # N
-            yb_close = yb[current_close_inds] # N
-            distance_magnitude[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.sqrt((x1 - xb_close) ** 2 + (y1 - yb_close) ** 2)  # shape N
-            boundary_pixels_full[i * batch_size : min((i + 1) * batch_size, num_pix)] = np.stack((xb_close, yb_close), axis=1)
+            xb_close = xb[current_close_inds]  # N
+            yb_close = yb[current_close_inds]  # N
+            distance_magnitude[i * batch_size: min((i + 1) * batch_size, num_pix)] = np.sqrt(
+                (x1 - xb_close) ** 2 + (y1 - yb_close) ** 2)  # shape N
+            boundary_pixels_full[i * batch_size: min((i + 1) * batch_size, num_pix)] = np.stack((xb_close, yb_close),
+                                                                                                axis=1)
+
+        # Convert arrays back to float64 at the end
+        distance_magnitude = distance_magnitude.astype(np.float64)
+        close_inds = close_inds.astype(np.float64)
+        boundary_pixels_full = boundary_pixels_full.astype(np.float64)
+        outer_pixels_full = outer_pixels_full.astype(np.float64)
 
         return distance_magnitude, close_inds, outer_pixels_full - self.centroid, boundary_pixels_full, kill_sig
 
@@ -236,6 +253,10 @@ class SpheroidImage:
         Returns:
             tuple: Contains principal angles, speeds, speed difference, and moments of inertia.
         """
+
+        # Convert the relevant arrays to float32 before calculations
+        angles = angles.astype(np.float32)
+        speeds = speeds.astype(np.float32)
 
         if save_images_to_pdf:
             # Create a PDF file for saving the plots
@@ -343,6 +364,16 @@ class SpheroidImage:
         # Close the PDF file
         if save_images_to_pdf:
             pdf_pages.close()
+
+        # Convert back to float64 before returning results
+        principle_angles = principle_angles.astype(np.float64)
+        principle_speeds = principle_speeds.astype(np.float64)
+        prin_speed_difference = prin_speed_difference.astype(np.float64)
+        principle_Irb = principle_Irb.astype(np.float64)
+        principle_Ixb = principle_Ixb.astype(np.float64)
+        principle_Iyb = principle_Iyb.astype(np.float64)
+        transformed_angles = transformed_angles.astype(np.float64)
+        transformed_speeds = transformed_speeds.astype(np.float64)
 
         # Return the calculated principal angles, speeds, speed difference, and moments of inertia
         return principle_angles[0], principle_angles[1], principle_speeds[0], principle_speeds[
