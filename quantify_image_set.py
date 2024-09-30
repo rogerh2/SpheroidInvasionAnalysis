@@ -1100,7 +1100,7 @@ def analysis_logic(data_fldr, master_id_dict, progress_print_fun, kill_queue: Qu
         overall_summary_dataframe = pd.concat([overall_summary_dataframe, summary_dataframe])
 
     # Save the overall summary dataframe to CSV at the end of the outermost loop
-    overall_summary_path = os.path.join(data_fldr, 'overall_summary.csv')
+    overall_summary_path = os.path.normpath(os.path.join(data_fldr, 'overall_summary.csv'))
     overall_summary_dataframe.to_csv(overall_summary_path, index=False)
     return overall_summary_path
 

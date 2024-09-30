@@ -188,18 +188,33 @@ class BinarizedImage:
 
 
 if __name__=="__main__":
-    image_path = r'.\Example Images\3D static\1_day0_10x_CH1_8bit_18S.tif'
-    save_path = r'.\Example Images\3D static\\'
+    import re
+    load_path = r'.\Example Images\3D static'  # Path to the folder containing images
+    img_file_ext = '.tif'  # Image file extension to look for
+    save_path = r'.\Example Images\3D static\\'    # Loop through all files in the folder
 
-    # Initialize the BinarizedImage object
-    bin_image = BinarizedImage(image_path, save_path, threshold=36)
 
-    # Apply a different threshold
-    new_threshold = 50
-    bin_image.update_mask(new_threshold)
+    for filename in os.listdir(load_path):
+        if filename.endswith(img_file_ext):
+            image_path = os.path.join(load_path, filename)
+            save_path = load_path  # Save in the same folder
 
-    # Apply Gaussian blur and find contours
-    bin_image.auto_contour(guassian_kernel=(5, 5))
+            # Initialize the BinarizedImage object
+            bin_image = BinarizedImage(image_path, save_path, threshold=36)
 
-    # Save the binarized image
-    bin_image.save_binarized_image()
+            # Apply a different threshold
+            new_threshold = 50
+            bin_image.update_mask(new_threshold)
+
+            # If this is the initial image remove artifacts that are not part of the main spheroid
+            if not int(re.search(PATTERN, os.path.basename(filename)).group(1)):
+                # Apply Gaussian blur and find contours
+                bin_image.auto_contour()
+
+                mask = np.zeros_like(bin_image.grayscale_array, dtype=np.uint8)
+                for contour in bin_image.contours[1:]:
+                    cv2.fillPoly(mask, [contour], 1)
+                bin_image.binary_array[mask.astype(bool)] = 0
+
+            # Save the binarized image
+            bin_image.save_binarized_image()

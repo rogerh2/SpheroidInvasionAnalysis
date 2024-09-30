@@ -1,6 +1,6 @@
 # Importing required modules for GUI and image processing
 from tkinter import (Canvas, Toplevel, IntVar, Tk, Frame, Button, Label, Entry, filedialog\
-    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox, StringVar)
+    , messagebox, Scale, HORIZONTAL, LEFT, TOP, X, ttk, NORMAL, DISABLED, END, Listbox, StringVar, Checkbutton)
 from PIL import Image, ImageTk
 from queue import Queue
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -11,6 +11,7 @@ import os
 import pandas as pd
 import threading
 import webbrowser
+import re
 
 from constants import *
 from binarize import BinarizedImage
@@ -84,17 +85,20 @@ def is_float_input(P):
     except ValueError:
         return False
 
-def is_valid_font_size(P):
-    # Function to test if input is a valid font size
+def is_valid_integer_in_range(P, lo, hi):
+    # Function to test if input is a valid integer within a defined range
     if P.isdigit():
-        return 1 <= int(P) <= 128
+        return lo <= int(P) <= hi
     return P == ""
 
+def is_valid_threshold(P):
+    return is_valid_integer_in_range(P, 0, 255)
+
+def is_valid_font_size(P):
+    return is_valid_integer_in_range(P, 1, 128)
+
 def is_valid_tick_size(P):
-    # Function to test if input is a valid font size
-    if P.isdigit():
-        return 6 <= int(P) <= 20
-    return P == ""
+    return is_valid_integer_in_range(P, 6, 20)
 
 
 class MainMenu:
@@ -105,11 +109,16 @@ class MainMenu:
 
         self.preview_window = None  # This will hold the reference to the preview window
         self.fig = None
-        self.time_unit_var = StringVar(value='day')  # StringVar to hold the time unit value
-        self.pixel_scale_var = StringVar(value='1')  # StringVar to hold the time unit value
-        self.font_var = StringVar(value=FONTS[ARIAL_IND])  # Default value
-        self.font_size_var = StringVar(value='12')  # Default font size
-        self.tick_size_var = StringVar(value='11')  # Default font size
+        self.time_unit = TIME_UNIT  # StringVar to hold the time unit value
+        self.pixel_scale = 1  # StringVar to hold the time unit value
+        self.font = FONTS[ARIAL_IND]  # Default value
+        self.font_size = 12  # Default font size
+        self.tick_size = 11  # Default font size
+
+        # Initialize default binarization settings
+        self.default_threshold = 36  # You can set your preferred default here
+        self.default_blur = 0
+        self.auto_clean = 0
 
         self.instructions_label = None
 
@@ -142,7 +151,7 @@ class MainMenu:
         self.settings_button = Button(self.frame, text="Settings", command=self.open_settings_window)
         self.settings_button.pack()
 
-        self.batch_size_var = None
+        self.batch_size = 10000
 
         # Add a Help button
         self.help_button = Button(self.frame, text="Help", command=lambda: open_popup_window(self.master, "File Naming Instructions:\n"
@@ -162,13 +171,33 @@ class MainMenu:
         settings_window.title("Settings")
         pad_size = 5
 
+        # Binarization Settings Label
+        Label(settings_window, text="Binarization Settings", font=("Arial", 14)).pack(pady=(2 * pad_size, 0))
+
+        # Default Binarization Threshold
+        Label(settings_window, text="Default Threshold:").pack(pady=(pad_size, 0))
+        default_threshold_var = StringVar(value=str(self.binarize_ap.default_threshold))
+        default_threshold_entry = Entry(settings_window, textvariable=default_threshold_var, validate="key",
+                                        validatecommand=(self.master.register(is_valid_threshold), '%P'))
+        default_threshold_entry.pack(pady=(0, pad_size))
+
+        # Default Gaussian Blur
+        # Blur Slider
+        blur_scale = Scale(settings_window, from_=1, to_=11, resolution=2, orient=HORIZONTAL,
+                                label="Default Blur")
+        blur_scale.pack(pady=(0, pad_size))
+        blur_scale.set(int(self.binarize_ap.default_blur))
+
+        # Auto Clean Checkbox
+        auto_clean_var = IntVar(value=self.binarize_ap.auto_clean)
+        Checkbutton(settings_window, text="Auto Clean in Auto Mode", variable=auto_clean_var).pack(pady=(pad_size, 0))
+
         # Performance Settings Label
         Label(settings_window, text="Performance Settings", font=("Arial", 14)).pack(pady=(2 * pad_size, 0))
 
         Label(settings_window, text="Batch Size:").pack(pady=(pad_size, 0))
-        if self.batch_size_var is None:
-            self.batch_size_var = StringVar(value='10000')
-        self.batch_size_entry = Entry(settings_window, textvariable=self.batch_size_var, validate="key",
+        batch_size_var = StringVar(value=str(self.batch_size))
+        self.batch_size_entry = Entry(settings_window, textvariable=batch_size_var, validate="key",
                                       validatecommand=(
                                       self.master.register(self.is_integer), '%P'))
         self.batch_size_entry.pack(pady=(0, pad_size))
@@ -178,12 +207,14 @@ class MainMenu:
         Label(settings_window, text="Dimensional Settings", font=("Arial", 14)).pack(pady=(pad_size, 0))
 
         Label(settings_window, text="Time Unit:").pack(pady=(pad_size, 0))
-        self.time_unit_entry = Entry(settings_window, textvariable=self.time_unit_var)
+        time_unit_var = StringVar(value=self.time_unit)
+        self.time_unit_entry = Entry(settings_window, textvariable=time_unit_var)
         self.time_unit_entry.pack(pady=(0, pad_size))
 
         float_vcmd = (self.master.register(is_float_input), '%P')
         Label(settings_window, text="Pixel Scale (µm/pixel):").pack(pady=(pad_size, 0))
-        self.pixel_scale_entry = Entry(settings_window, textvariable=self.pixel_scale_var
+        pixel_scale_var = StringVar(value=f"{self.pixel_scale:.2f}")
+        self.pixel_scale_entry = Entry(settings_window, textvariable=pixel_scale_var
                                        , validate="key", validatecommand=float_vcmd)
         self.pixel_scale_entry.pack(pady=(0, pad_size))
 
@@ -191,23 +222,53 @@ class MainMenu:
         Label(settings_window, text="Plot Settings", font=("Arial", 14)).pack(pady=(2 * pad_size, 0))
 
         Label(settings_window, text="Font:").pack(pady=(pad_size, 0))
-        self.font_menu = ttk.Combobox(settings_window, textvariable=self.font_var, values=FONTS, state='readonly')
+        font_var = StringVar(value=self.font)
+        self.font_menu = ttk.Combobox(settings_window, textvariable=font_var, values=FONTS, state='readonly')
         self.font_menu.pack(pady=(0, pad_size))
 
         font_size_vcmd = (self.master.register(is_valid_font_size), '%P')
         Label(settings_window, text="Font Size:").pack(pady=(pad_size, 0))
-        self.font_size_combobox = ttk.Combobox(settings_window, textvariable=self.font_size_var, values=FONT_SIZES
+        font_size_var = StringVar(value=str(self.font_size))
+        self.font_size_combobox = ttk.Combobox(settings_window, textvariable=font_size_var, values=FONT_SIZES
                                                , validate="key", validatecommand=font_size_vcmd)
         self.font_size_combobox.pack(pady=(0, pad_size))
 
         tick_size_vcmd = (self.master.register(is_valid_tick_size), '%P')
         Label(settings_window, text="Tick Size:").pack(pady=(pad_size, 0))
-        self.tick_size_var_combobox = ttk.Combobox(settings_window, textvariable=self.tick_size_var, values=TICK_SIZES
+        tick_size_var = StringVar(value=str(self.tick_size))
+        self.tick_size_var_combobox = ttk.Combobox(settings_window, textvariable=tick_size_var, values=TICK_SIZES
                                                    , validate="key", validatecommand=tick_size_vcmd)
         self.tick_size_var_combobox.pack(pady=(0, pad_size))
 
         self.preview_button = Button(settings_window, text="Preview Plot Format", command=self.preview_plot)
         self.preview_button.pack(pady=(pad_size, pad_size))
+
+
+        # Add a button to save the settings
+        Button(settings_window, text="Save Settings", command=lambda: self.save_settings(
+            default_threshold_var.get()
+            , blur_scale.get()
+            , auto_clean_var.get()
+            , batch_size_var.get()
+            , time_unit_var.get()
+            , pixel_scale_var.get()
+            , font_var.get()
+            , font_size_var.get()
+            , tick_size_var.get()
+        )).pack(pady=(pad_size, pad_size))
+
+    def save_settings(self, threshold, blur, auto_clean, batch_size, time_unit, pixel_scale, font, font_size, tick_size):
+        self.binarize_ap.default_threshold = int(threshold)
+        self.binarize_ap.pattern = rf'{time_unit}(\d+)'
+        self.binarize_ap.default_blur = int(blur)
+        self.binarize_ap.auto_clean = auto_clean
+        self.batch_size = int(batch_size)
+        self.time_unit = time_unit
+        self.pixel_scale = float(pixel_scale)
+        self.font = font
+        self.font_size = int(font_size)
+        self.tick_size = int(tick_size)
+
 
     def is_integer(self, P):
         # Function to test if input is a valid integer
@@ -219,16 +280,13 @@ class MainMenu:
             self.concat_ap.open_consolidate_window(self.analyze_ap.summary_files)
 
     def run_analysis(self):
-        time_unit = self.time_unit_var.get()
-        pixel_scale = float(self.pixel_scale_var.get())
-        font_name = self.font_var.get()
-        font_size = int(self.font_size_var.get())
+        time_unit = self.time_unit
+        pixel_scale = self.pixel_scale
+        font_name = self.font
+        font_size = self.font_size
         font_spec = {'fontname': font_name, 'size': font_size}
-        if self.batch_size_var is None:
-            batch_size = 10000
-        else:
-            batch_size = int(self.batch_size_var.get())
-        tick_size = int(self.tick_size_var.get())
+        batch_size = self.batch_size
+        tick_size = self.tick_size
         pattern = rf'{time_unit}(\d+)'
         self.analyze_ap.open_analyze_window(pattern, time_unit, pixel_scale, font_spec, tick_size, batch_size)
 
@@ -250,11 +308,11 @@ class MainMenu:
         self.preview_window.title("Preview")
         self.preview_window.protocol("WM_DELETE_WINDOW", on_close_preview)
 
-        font_name = self.font_var.get()
-        font_size = int(self.font_size_var.get())
+        font_name = self.font
+        font_size = int(self.font_size)
         font_spec = {'fontname': font_name, 'size': font_size}
 
-        tick_size = int(self.tick_size_var.get())
+        tick_size = int(self.tick_size)
 
         self.fig = plot_moment_of_inertia('Example', EXAMPLE_MOMENTS, font_spec, tick_size)
 
@@ -277,6 +335,7 @@ class ImageBinarizationApp:
         self.original_image_label = None
         self.binarized_image_label = None
         self.image_info_label = None
+        self.pattern = PATTERN
 
         # Paths
         self.image_folder_path = ""
@@ -289,7 +348,10 @@ class ImageBinarizationApp:
 
         # Threshold
         self.threshold_scale = None
-        self.local_threshold = 36 # Member variable to store the points for local threshold or deletion
+        self.local_threshold = 36
+        self.default_threshold = 36
+        self.default_blur = 0
+        self.auto_clean = False
         self.points = []
         self.oval_ids = []
 
@@ -326,7 +388,8 @@ class ImageBinarizationApp:
         self.draw_var = False
         self.draw_check = None
         self.popup = None
-        self.continue_button = None
+        self.auto_button = None
+        self.manual_button = None
         self.set_scale_loc_only = False
 
         # In update_canvas method
@@ -334,6 +397,7 @@ class ImageBinarizationApp:
         self.right_image_id = None
 
         self.recent_threshold = self.local_threshold  # Initialize with the default local threshold
+        self.recent_blur = self.default_blur
         self.image_states = []
         self.threshold_states = []
         self.current_state_index = -1
@@ -554,6 +618,11 @@ class ImageBinarizationApp:
             if self.boundary_var.get():
                 # Determine the Gaussian kernel size from the blur scale or set to None if blur is 0
                 kernel_size = None if self.blur_scale.get() == 0 else (self.blur_scale.get(), self.blur_scale.get())
+                if kernel_size is None:
+                    self.recent_blur = 0
+                else:
+                    self.recent_blur = kernel_size
+
                 # Generate contours
                 self.current_image.auto_contour(guassian_kernel=kernel_size)
 
@@ -597,10 +666,45 @@ class ImageBinarizationApp:
         Button(self.popup, text="Select Load Folder", command=self.select_load_folder).pack(padx=10, pady=5)
         Button(self.popup, text="Select Save Folder", command=self.select_save_folder).pack(padx=10, pady=5)
 
-        self.continue_button = Button(self.popup, text="Continue", command=self.open_binarize_window, state=DISABLED)
-        self.continue_button.pack(padx=10, pady=10)
+        # Replace the continue button with two buttons
+        self.manual_button = Button(self.popup, text="Continue to Manual Editor", command=self.open_binarize_window, state=DISABLED)
+        self.manual_button.pack(padx=10, pady=5)
+        self.auto_button = Button(self.popup, text="Auto Binarize", command=self.auto_binarize, state=DISABLED)
+        self.auto_button.pack(padx=10, pady=(5, 10))  # Add the Auto Binarize button
 
         self.popup.protocol("WM_DELETE_WINDOW", self.on_close_popup)  # Handle the close event
+
+
+    def auto_binarize(self):
+        # Use the stored default settings
+        default_threshold = self.default_threshold
+        default_blur = self.default_blur
+        auto_clean = self.auto_clean
+
+        # Loop through the images and apply binarization
+        for img_name in self.image_list:
+            img_path = os.path.join(self.image_folder_path, img_name)
+            img = BinarizedImage(img_path, self.save_folder_path)
+
+            # Apply threshold and blur
+            img.update_mask(default_threshold)
+
+            # Auto clean if selected
+            if auto_clean and (not int(re.search(self.pattern, os.path.basename(img_name)).group(1))):
+                if default_blur:
+                    img.auto_contour(guassian_kernel=(default_blur, default_blur))
+                else:
+                    img.auto_contour()
+                mask = np.zeros_like(img.grayscale_array, dtype=np.uint8)
+                for contour in img.contours[1:]:
+                    cv2.fillPoly(mask, [contour], 1)
+                img.binary_array[mask.astype(bool)] = 0
+
+            # Save the binarized image
+            img.save_binarized_image()
+
+        # Show a message or open the save folder
+        open_popup_window(self.popup, f"Images saved to \n{self.save_folder_path}")
 
     def open_folder_dialog(self, folder_type):
         folder_selected = filedialog.askdirectory()
@@ -625,7 +729,8 @@ class ImageBinarizationApp:
 
     def check_folder_selection(self):
         if self.image_folder_path and self.save_folder_path:
-            self.continue_button['state'] = NORMAL
+            self.auto_button['state'] = NORMAL
+            self.manual_button['state'] = NORMAL
 
     def on_close_popup(self):
         """Close the popup window and reset related variables to their default values."""
@@ -633,7 +738,8 @@ class ImageBinarizationApp:
             self.popup.destroy()  # Destroy the popup pane window
             self.popup = None  # Reset the window variable
 
-        self.continue_button = None
+        self.auto_button = None
+        self.manual_button = None
         self.master.deiconify()
 
     def reset_view(self):
@@ -658,7 +764,8 @@ class ImageBinarizationApp:
         if self.popup:
             self.popup.destroy()  # Destroy the popup pane window
             self.popup = None  # Reset the window variablees
-            self.continue_button = None
+            self.auto_button = None
+            self.manual_button = None
 
         # Create the binarize window
         self.binarize_window = Toplevel()
@@ -743,6 +850,7 @@ class ImageBinarizationApp:
         self.blur_scale = Scale(modify_frame, from_=1, to_=11, resolution=2, orient=HORIZONTAL,
                                 label="Blur", command=self.update_canvas)
         self.blur_scale.grid(row=2, column=0, sticky='we', padx=10, columnspan=4)
+        self.blur_scale.set(int(self.recent_blur))
         create_tooltip(self.blur_scale, "Set a Gaussian blur for automatic boundary detection")
 
         # Boundary Toggle Button
