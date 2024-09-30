@@ -33,8 +33,8 @@ This file handles the binarization of images, providing a class to load a graysc
 This file defines the graphical user interface (GUI) for the application, built using Tkinter. The GUI allows users to:
 
 - **MainMenu**: The main menu that provides access to three functionalities: binarize images, analyze images, and consolidate CSV files.
-- **ImageBinarizationApp**: Handles the binarization of images, including loading images, applying thresholds, drawing boundaries, and saving the results.
-- **SpheroidAnalysisApp**: Manages the analysis of spheroid images, allowing users to select folders, input metadata, and run the analysis to calculate the metrics used in the paper.
+- **ImageBinarizationApp**: Handles the binarization of images, including loading images, applying thresholds, drawing boundaries, and saving the results. This section applies a binarization threshold to initial gray scale images and saves them either with or without a circular mask.
+- **SpheroidAnalysisApp**: Manages the analysis of spheroid images, allowing users to select folders, input metadata, and run the analysis to calculate the metrics used in the paper. This section calculates statics for the images based off the binarized images and saves explanatory plots as well as raw data in a summary csv file.
 - **CSVConcatenatorApp**: Allows users to select and concatenate multiple CSV files into a single file.
 
 ## Detailed ReadMe and Usage Guide
@@ -79,6 +79,16 @@ An invalid image name:
 10x_CH1_1_day2_8bit_18S.tif
 ```
 
+#### Running the Application
+
+To run the application, execute the `gui.py` file:
+
+```bash
+python gui.py
+```
+
+Or double click `run.bat` file on Windows
+
 #### Main Menu
 
 When you run the application, the main window opens, providing access to three main functions:
@@ -92,9 +102,10 @@ When you run the application, the main window opens, providing access to three m
 *The GUI main menu*
 
 #### Settings Page
-1. **Performance Settings** The only setting that affects performance is the batch size. The batch size is the number of pixels to process during each iteration during the analysis step. A larger batch size can lead to shorter processing times by higher RAM usage.
-2. **Dimensional Settings** These set the time unit and the micrometers per pixel. The time unit should match the one used in your file name. In the example provided an image was taken each hour.
-3. **Plot Settings** The GUI will automatically produce plots during the analysis step. This lets the user set the font, font size, and tick size for the axes. The plot settings can be previewed once chosen.
+1. **Binarize Settings** These settings control the default binarization parameters. The threshold adjusts the binarization threshold and the blur controls a gaussian blur used assist in auto contour detection. If auto clean is selected the application will automatically remove artifacts outside the largest boundary in the initial image (where the time is 0) if auto binarization is selected.
+2. **Performance Settings** The only setting that affects performance is the batch size. The batch size is the number of pixels to process during each iteration during the analysis step. A larger batch size can lead to shorter processing times by higher RAM usage.
+3. **Dimensional Settings** These set the time unit and the micrometers per pixel. The time unit should match the one used in your file name. In the example provided an image was taken each hour.
+4. **Plot Settings** The GUI will automatically produce plots during the analysis step. This lets the user set the font, font size, and tick size for the axes. The plot settings can be previewed once chosen.
 
 ![settings.png](GUI%20instructional%20images%2Fsettings.png)
 
@@ -107,13 +118,17 @@ When you run the application, the main window opens, providing access to three m
 2. **Select Folders**:
     - Click "Select Load Folder" to choose the folder containing the images you want to binarize.
     - Click "Select Save Folder" to choose the folder where the binarized images will be saved.
-    - Once you have selected your folders press continue
+    - Once you have selected your folders press 'Continue to Manual Editor' to manually binarize your images or
+      'Auto Binarize' to automatically apply your default binarization settings
+3. **Auto Binarize**:
+   - If 'Auto Binarize' is selected all images in the selected folder will be binarized with the default threshold and,
+     if auto clean is checked, will remove artifacts outside the main spheroid utilizing the chosen gaussian blur.
    
 ![binarize folder selection.png](GUI%20instructional%20images%2Fbinarize%20folder%20selection.png)
 
 *The binarize folder selection menu*
 
-3. **Binarize Window**:
+3. **Manual Binarize Window**:
    - The main binarization menu is used to customize image binarization. It allows the user to apply binarization thresholds globally throughout an entire image or locally within a drawn mask. It also allows users to automatically remove pixels outside of the main spheroid with automatic boundary detection.
    - The images will be displayed side-by-side: the original grayscale image on the left and the binarized image on the right.
    - Use the "Threshold" slider to adjust the binarization threshold.
@@ -157,16 +172,6 @@ Once all images are analyzed they can be concatenated into one csv in the GUI fo
 ![concatenate files.png](GUI%20instructional%20images%2Fconcatenate%20files.png)
 
 *The concatenate files window. Se*
-
-### Running the Application
-
-To run the application, execute the `gui.py` file:
-
-```bash
-python gui.py
-```
-
-Or double click `run.bat` file on Windows
 
 ## Usage Guide for Direct Code Usage
 
